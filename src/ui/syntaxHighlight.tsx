@@ -40,7 +40,11 @@ function renderHighlightedClause(text: string, keyPrefix: string): ReactNode[] {
   return nodes;
 }
 
-export function highlightPatternLine(rawLine: string, lineIndex: number): ReactNode {
+export function highlightPatternLine(
+  rawLine: string,
+  lineIndex: number,
+  diagnosticSeverity?: 'error' | 'warning' | 'info'
+): ReactNode {
   if (rawLine.length === 0) {
     return '\n';
   }
@@ -138,13 +142,35 @@ export function highlightPatternLine(rawLine: string, lineIndex: number): ReactN
     return (
       <>
         <span className="syn-row-num">{headerPart}</span>
-        {renderHighlightedClause(bodyPart, `L${lineIndex}`)}
-        {countSuffix && <span className="syn-count">{countSuffix}</span>}
+        {diagnosticSeverity && !countSuffix ? (
+          <span className={`syn-squiggle syn-squiggle-${diagnosticSeverity}`}>
+            {renderHighlightedClause(bodyPart, `L${lineIndex}`)}
+          </span>
+        ) : (
+          renderHighlightedClause(bodyPart, `L${lineIndex}`)
+        )}
+        {countSuffix && (
+          <span
+            className={`syn-count ${
+              diagnosticSeverity ? `syn-squiggle syn-squiggle-${diagnosticSeverity}` : ''
+            }`}
+          >
+            {countSuffix}
+          </span>
+        )}
         {trailingComment && <span className="syn-comment">{trailingComment}</span>}
       </>
     );
   }
 
   // 6. Any unrecognized line beginning is parsed as a freeform comment / craft note!
-  return <span className="syn-comment">{rawLine}</span>;
+  return (
+    <span
+      className={`syn-comment ${
+        diagnosticSeverity ? `syn-squiggle syn-squiggle-${diagnosticSeverity}` : ''
+      }`}
+    >
+      {rawLine}
+    </span>
+  );
 }

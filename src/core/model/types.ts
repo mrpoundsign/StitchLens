@@ -168,6 +168,14 @@ export interface PatternDiagnostic {
   line: number;
   message: string;
   suggestion?: string;
+  fixAction?:
+    | {
+        kind: 'update_declared_count';
+        expectedCount: number;
+      }
+    | {
+        kind: 'insert_chain_turn';
+      };
 }
 
 export interface CompiledPattern {

@@ -240,6 +240,10 @@ Rnd 2: [sc, inc] x 5 (18)
     expect(errors[0].line).toBe(3);
     expect(errors[0].message).toContain('declares (18)');
     expect(errors[0].message).toContain('15');
+    expect(errors[0].fixAction).toEqual({
+      kind: 'update_declared_count',
+      expectedCount: 15,
+    });
   });
 
   it('supports UK crochet dialect translation (UK dc -> US sc, UK tr -> US dc)', () => {
@@ -315,6 +319,38 @@ Freeform reminder at the end
     expect(headerNode).toBeTruthy();
     expect(rowNode).toBeTruthy();
     expect(freeformNode).toBeTruthy();
+  });
+
+  it('infers spiral_rounds (no implicit turns) for joined-leg / FLO-attached pieces without turns, and only flags true flat pieces', () => {
+    const joinedAndFlatPattern = `
+Body and Head:
+11. Make 12 sc in each leg for a total of 24 sc (24)
+12. 8 sc, FLO: (sc, inc) x 4, 8 sc (28)
+13. 8 sc, (2 sc, inc) x 4, 8 sc (32)
+
+Skirt:
+1. 28 sc (28)
+2. 28 sc (28)
+
+Shield:
+1. Ch 2
+2. Increase in 2nd chain from hook (2)
+3. Ch, turn, 2 inc (4)
+7-10. 10 sc (10)
+`;
+    const compiled = compilePattern(joinedAndFlatPattern);
+    const bodyPiece = compiled.pieces.find((p) => p.id === 'body_and_head')!;
+    const skirtPiece = compiled.pieces.find((p) => p.id === 'skirt')!;
+    const shieldPiece = compiled.pieces.find((p) => p.id === 'shield')!;
+
+    expect(bodyPiece.workMode).toBe('spiral_rounds');
+    expect(skirtPiece.workMode).toBe('spiral_rounds');
+    expect(shieldPiece.workMode).toBe('flat_rows');
+
+    const implicitRows = compiled.rows.filter((r) => r.implicitTurn);
+    // Only Shield rows 7-10 should have implicit turns! Body and Skirt have 0 implicit turns.
+    expect(implicitRows.every((r) => r.pieceId === 'shield')).toBe(true);
+    expect(implicitRows.length).toBe(4);
   });
 });
 

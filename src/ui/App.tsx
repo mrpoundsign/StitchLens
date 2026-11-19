@@ -89,6 +89,10 @@ export function App() {
   const [draggingAxis, setDraggingAxis] = useState<'col' | 'row' | null>(null);
   const [pinningPieceId, setPinningPieceId] = useState<string | null>(null);
   const [loadedFileName, setLoadedFileName] = useState<string | null>(null);
+  const [hoveredDiagLine, setHoveredDiagLine] = useState<{ line: number; topPx: number } | null>(
+    null
+  );
+  const hoverCloseTimerRef = useRef<number | null>(null);
 
   const sliderId = useId();
   const dialectSelectId = useId();
@@ -587,7 +591,7 @@ export function App() {
       .map((line, idx) => {
         if (!targetLines.has(idx + 1)) return line;
         return line.replace(
-          /^(\s*(?:(?:rows?|r)\s*\d+\s*[:.-]|\d+\s*[.):-])\s*)/i,
+          /^(\s*(?:(?:(?:rnds?|rounds?|rows?|r)\s*)?\d+(?:\s*[-–—to]+\s*\d+)?(?:\s*\([^)]*\))?(?:\s*\[(?:RS|WS)\])?\s*[.):-])\s*)/i,
           '$1Chain, turn, '
         );
       })
@@ -618,10 +622,15 @@ export function App() {
     ? `Stitch ${displayStepInScope} of ${scopeTotalStitches}: ${activePiece?.name ?? 'Piece'}, ${activeRow?.label ?? `Row ${activeStitch.rowNumber}`}, ${activeStitch.label}`
     : 'No stitches compiled';
 
-  const highlightedLines = useMemo(
-    () => patternText.split('\n').map((line, idx) => highlightPatternLine(line, idx)),
-    [patternText]
-  );
+  const lineDiagnosticsMap = useMemo(() => {
+    const map = new Map<number, CompiledPattern['diagnostics']>();
+    for (const d of compiled.diagnostics) {
+      const list = map.get(d.line) ?? [];
+      list.push(d);
+      map.set(d.line, list);
+    }
+    return map;
+  }, [compiled.diagnostics]);
 
   const lineSeverityMap = useMemo(() => {
     const map = new Map<number, 'error' | 'warning' | 'info'>();
@@ -637,6 +646,56 @@ export function App() {
     }
     return map;
   }, [compiled.diagnostics]);
+
+  const highlightedLines = useMemo(
+    () =>
+      patternText
+        .split('\n')
+        .map((line, idx) => highlightPatternLine(line, idx, lineSeverityMap.get(idx + 1))),
+    [patternText, lineSeverityMap]
+  );
+
+  const openDiagHover = (line: number, topPx: number) => {
+    if (hoverCloseTimerRef.current !== null) {
+      window.clearTimeout(hoverCloseTimerRef.current);
+      hoverCloseTimerRef.current = null;
+    }
+    setHoveredDiagLine({ line, topPx });
+  };
+
+  const scheduleCloseDiagHover = () => {
+    if (hoverCloseTimerRef.current !== null) {
+      window.clearTimeout(hoverCloseTimerRef.current);
+    }
+    hoverCloseTimerRef.current = window.setTimeout(() => {
+      setHoveredDiagLine(null);
+      hoverCloseTimerRef.current = null;
+    }, 220);
+  };
+
+  const handleApplyDeclaredCountFix = (lineNum: number, expectedCount: number) => {
+    const updated = patternText
+      .split('\n')
+      .map((line, idx) => {
+        if (idx + 1 !== lineNum) return line;
+        // Replace trailing (N) or [N] or — N sts
+        if (
+          /(\(\s*\d+\s*(?:sts?|stitches|pts?|puntos?)?\s*\)|\[\s*\d+\s*(?:sts?|stitches|pts?|puntos?)?\s*\])(\s*(?:\/\/.*|#.*)?)$/i.test(
+            line
+          )
+        ) {
+          return line.replace(
+            /(\(\s*\d+\s*(?:sts?|stitches|pts?|puntos?)?\s*\)|\[\s*\d+\s*(?:sts?|stitches|pts?|puntos?)?\s*\])(\s*(?:\/\/.*|#.*)?)$/i,
+            `(${expectedCount})$2`
+          );
+        }
+        return `${line.trimEnd()} (${expectedCount})`;
+      })
+      .join('\n');
+    setPatternText(updated);
+    setHoveredDiagLine(null);
+    showToast(`Updated Line ${lineNum} stitch count to (${expectedCount})!`);
+  };
 
   const syncEditorScroll = () => {
     const ta = textareaRef.current;
@@ -842,7 +901,10 @@ export function App() {
             </div>
           </div>
 
-          <div className="editor-highlight-stack">
+          <div
+            className="editor-highlight-stack"
+            onMouseLeave={scheduleCloseDiagHover}
+          >
             <div
               ref={lineGutterRef}
               className="pattern-line-gutter"
@@ -851,12 +913,36 @@ export function App() {
               {highlightedLines.map((_, idx) => {
                 const lineNum = idx + 1;
                 const sev = lineSeverityMap.get(lineNum);
+                const diags = lineDiagnosticsMap.get(lineNum);
                 return (
                   <span
                     key={lineNum}
-                    className={`gutter-line-num ${sev ? `gutter-line-diag-${sev}` : ''}`}
+                    className={`gutter-line-num ${sev ? `gutter-line-diag-${sev} gutter-line-has-diag` : ''}`}
+                    title={diags ? diags.map((d) => d.message).join('\n') : undefined}
+                    onMouseEnter={(e) => {
+                      if (!diags) return;
+                      const stackRect = e.currentTarget
+                        .closest('.editor-highlight-stack')
+                        ?.getBoundingClientRect();
+                      const rowRect = e.currentTarget.getBoundingClientRect();
+                      const topPx = stackRect ? rowRect.bottom - stackRect.top + 2 : 28;
+                      openDiagHover(lineNum, topPx);
+                    }}
+                    onClick={() => {
+                      if (diags) {
+                        jumpEditorToLine(lineNum);
+                      }
+                    }}
                   >
-                    {lineNum}
+                    {sev && (
+                      <span
+                        className={`gutter-diag-marker gutter-diag-marker-${sev}`}
+                        aria-hidden="true"
+                      >
+                        {sev === 'error' ? '!' : sev === 'warning' ? '?' : 'i'}
+                      </span>
+                    )}
+                    <span>{lineNum}</span>
                   </span>
                 );
               })}
@@ -866,9 +952,17 @@ export function App() {
               className="pattern-highlight-backdrop"
               aria-hidden="true"
             >
-              {highlightedLines.map((node, idx) => (
-                <div key={idx}>{node}</div>
-              ))}
+              {highlightedLines.map((node, idx) => {
+                const sev = lineSeverityMap.get(idx + 1);
+                return (
+                  <div
+                    key={idx}
+                    className={sev ? `backdrop-line-diag-${sev}` : undefined}
+                  >
+                    {node}
+                  </div>
+                );
+              })}
             </pre>
             <textarea
               ref={textareaRef}
@@ -882,7 +976,27 @@ export function App() {
               autoComplete="off"
               autoCorrect="off"
               value={patternText}
-              onScroll={syncEditorScroll}
+              onScroll={() => {
+                syncEditorScroll();
+                setHoveredDiagLine(null);
+              }}
+              onMouseMove={(e) => {
+                const ta = textareaRef.current;
+                if (!ta) return;
+                const rect = ta.getBoundingClientRect();
+                const style = window.getComputedStyle(ta);
+                const padTop = parseFloat(style.paddingTop) || 13.6;
+                const lineHeight = parseFloat(style.lineHeight) || 21.3;
+                const relY = e.clientY - rect.top + ta.scrollTop - padTop;
+                const lineNum = Math.floor(relY / lineHeight) + 1;
+                if (lineDiagnosticsMap.has(lineNum)) {
+                  const topPx =
+                    padTop + lineNum * lineHeight - ta.scrollTop + 2;
+                  openDiagHover(lineNum, Math.max(24, Math.min(rect.height - 40, topPx)));
+                } else if (hoveredDiagLine !== null) {
+                  scheduleCloseDiagHover();
+                }
+              }}
               onDragOver={(e) => {
                 e.preventDefault();
               }}
@@ -901,28 +1015,107 @@ export function App() {
                 setPatternText(e.target.value);
               }}
             />
+
+            {hoveredDiagLine && lineDiagnosticsMap.has(hoveredDiagLine.line) && (
+              <div
+                className="editor-diag-popover"
+                style={{ top: `${hoveredDiagLine.topPx}px` }}
+                onMouseEnter={() => {
+                  if (hoverCloseTimerRef.current !== null) {
+                    window.clearTimeout(hoverCloseTimerRef.current);
+                    hoverCloseTimerRef.current = null;
+                  }
+                }}
+                onMouseLeave={scheduleCloseDiagHover}
+              >
+                {lineDiagnosticsMap.get(hoveredDiagLine.line)!.map((d, dIdx) => (
+                  <div key={dIdx} className="editor-diag-popover-item">
+                    <div
+                      className={`editor-diag-popover-header diag-${d.severity}`}
+                    >
+                      <span>
+                        {d.severity === 'error'
+                          ? '! Stitch Count Mismatch'
+                          : d.severity === 'warning'
+                            ? '? Pattern Note'
+                            : 'i Compiler Hint'}{' '}
+                        (Line {d.line})
+                      </span>
+                    </div>
+                    <div>{d.message}</div>
+                    {d.suggestion && (
+                      <div style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>
+                        {d.suggestion}
+                      </div>
+                    )}
+                    {d.fixAction?.kind === 'update_declared_count' && (
+                      <button
+                        type="button"
+                        className="editor-diag-quickfix-btn"
+                        onClick={() =>
+                          handleApplyDeclaredCountFix(
+                            d.line,
+                            d.fixAction!.kind === 'update_declared_count'
+                              ? d.fixAction!.expectedCount
+                              : 0
+                          )
+                        }
+                      >
+                        Quick Fix: Change declared count to ({d.fixAction.expectedCount})
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {compiled.diagnostics.length > 0 && (
             <div className="diagnostics-strip" role="status" aria-live="polite">
               {compiled.diagnostics.map((d, idx) => (
-                <button
+                <div
                   key={`${d.line}-${idx}`}
-                  type="button"
-                  className={`diag-item diag-${d.severity}`}
-                  onClick={() => jumpEditorToLine(d.line)}
-                  title={`Click to jump to Line ${d.line}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '0.4rem',
+                  }}
                 >
-                  <span>
-                    {d.severity === 'error'
-                      ? 'Mismatch'
-                      : d.severity === 'warning'
-                        ? 'Note'
-                        : 'Hint'}{' '}
-                    (Line {d.line}):
-                  </span>
-                  <span>{d.message}</span>
-                </button>
+                  <button
+                    type="button"
+                    className={`diag-item diag-${d.severity}`}
+                    onClick={() => jumpEditorToLine(d.line)}
+                    title={`Click to jump to Line ${d.line}`}
+                  >
+                    <span>
+                      {d.severity === 'error'
+                        ? 'Mismatch'
+                        : d.severity === 'warning'
+                          ? 'Note'
+                          : 'Hint'}{' '}
+                      (Line {d.line}):
+                    </span>
+                    <span>{d.message}</span>
+                  </button>
+                  {d.fixAction?.kind === 'update_declared_count' && (
+                    <button
+                      type="button"
+                      className="editor-diag-quickfix-btn"
+                      style={{ flexShrink: 0, marginBlockStart: 0 }}
+                      onClick={() =>
+                        handleApplyDeclaredCountFix(
+                          d.line,
+                          d.fixAction!.kind === 'update_declared_count'
+                            ? d.fixAction!.expectedCount
+                            : 0
+                        )
+                      }
+                    >
+                      Fix to ({d.fixAction.expectedCount})
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           )}

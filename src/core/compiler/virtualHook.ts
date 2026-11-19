@@ -174,6 +174,20 @@ class PieceCompiler {
     return node;
   }
 
+  private hasExplicitTurn(stmts: StatementNode[]): boolean {
+    for (const s of stmts) {
+      if (s.type === 'turn_op') return true;
+      if (s.type === 'repeat_op' && this.hasExplicitTurn(s.body)) return true;
+    }
+    return false;
+  }
+
+  private pieceUsesFlatTurnsOrRows(): boolean {
+    return this.piece.rows.some(
+      (r) => r.explicitModeHint === 'row' || this.hasExplicitTurn(r.statements)
+    );
+  }
+
   private hasTurnOrBorder(stmts: StatementNode[]): boolean {
     for (const s of stmts) {
       if (s.type === 'turn_op' || s.type === 'border_op') return true;
@@ -302,7 +316,11 @@ class PieceCompiler {
         const needed = Math.max(2, this.estimateParentsNeeded(rowAst.statements));
         const synthSpan: SourceSpan = { line: rowAst.sourceLine, colStart: 1, colEnd: 1 };
         const hasTurn = this.hasTurnOrBorder(rowAst.statements);
-        this.workMode = hasTurn || rowAst.explicitModeHint !== 'round' ? 'flat_rows' : 'spiral_rounds';
+        const isFlatPiece = hasTurn || this.pieceUsesFlatTurnsOrRows();
+        this.workMode = isFlatPiece ? 'flat_rows' : 'spiral_rounds';
+        if (!isFlatPiece) {
+          this.closedBottom = false;
+        }
 
         for (let k = 0; k < needed; k++) {
           const chNode = this.emitStitch({
@@ -398,7 +416,11 @@ class PieceCompiler {
             severity: 'error',
             line: rowAst.sourceLine,
             message: `${rowAst.rawHeader}: Pattern declares (${rowAst.declaredCount}), but instructions produce ${primaryCount} stitches.`,
-            suggestion: `Check your increases/decreases or repeat multiplier on line ${rowAst.sourceLine}.`,
+            suggestion: `Update declared count to (${primaryCount}) or adjust your increases/decreases on line ${rowAst.sourceLine}.`,
+            fixAction: {
+              kind: 'update_declared_count',
+              expectedCount: primaryCount,
+            },
           });
         }
       }

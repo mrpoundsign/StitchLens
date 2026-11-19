@@ -338,10 +338,10 @@
     position: absolute;
     inset-block: 0;
     inset-inline-start: 0;
-    inline-size: 3.1rem;
+    inline-size: 3.7rem;
     margin: 0;
     padding-block: 0.85rem 2.75rem;
-    padding-inline: 0.35rem 0.45rem;
+    padding-inline: 0.3rem 0.4rem;
     border-inline-end: 1px solid var(--border-ui);
     background-color: var(--bg-subtle);
     color: var(--text-secondary);
@@ -350,13 +350,50 @@
     line-height: 1.55;
     text-align: end;
     user-select: none;
-    pointer-events: none;
     overflow: hidden;
   }
 
   .gutter-line-num {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.25rem;
     block-size: calc(0.86rem * 1.55);
+  }
+
+  .gutter-line-has-diag {
+    cursor: pointer;
+  }
+
+  .gutter-diag-marker {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 0.95rem;
+    block-size: 0.95rem;
+    border-radius: 50%;
+    font-size: 0.65rem;
+    font-weight: 800;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .gutter-diag-marker-error {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+    border: 1px solid #ef4444;
+  }
+
+  .gutter-diag-marker-warning {
+    background-color: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+    border: 1px solid #f59e0b;
+  }
+
+  .gutter-diag-marker-info {
+    background-color: rgba(56, 189, 248, 0.2);
+    color: var(--brand-accent);
+    border: 1px solid var(--brand-accent);
   }
 
   .gutter-line-diag-error {
@@ -378,9 +415,9 @@
   .pattern-textarea {
     position: absolute;
     inset-block: 0;
-    inset-inline-start: 3.1rem;
+    inset-inline-start: 3.7rem;
     inset-inline-end: 0;
-    inline-size: calc(100% - 3.1rem);
+    inline-size: calc(100% - 3.7rem);
     block-size: 100%;
     margin: 0;
     padding-block: 0.85rem 2.75rem;
@@ -392,6 +429,88 @@
     tab-size: 2;
     white-space: pre;
     overflow: auto;
+  }
+
+  .backdrop-line-diag-error {
+    background-color: rgba(239, 68, 68, 0.08);
+    border-radius: 0.2rem;
+  }
+
+  .backdrop-line-diag-warning {
+    background-color: rgba(245, 158, 11, 0.08);
+    border-radius: 0.2rem;
+  }
+
+  .backdrop-line-diag-info {
+    background-color: rgba(56, 189, 248, 0.07);
+    border-radius: 0.2rem;
+  }
+
+  .syn-squiggle {
+    text-decoration-line: underline;
+    text-decoration-style: wavy;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1.5px;
+  }
+
+  .syn-squiggle-error {
+    text-decoration-color: #ef4444;
+  }
+
+  .syn-squiggle-warning {
+    text-decoration-color: #f59e0b;
+  }
+
+  .syn-squiggle-info {
+    text-decoration-color: var(--brand-accent);
+  }
+
+  .editor-diag-popover {
+    position: absolute;
+    inset-inline-start: 3.9rem;
+    max-inline-size: min(23rem, calc(100% - 4.4rem));
+    z-index: 25;
+    padding: 0.55rem 0.7rem;
+    border-radius: 0.5rem;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-ui);
+    box-shadow: 0 8px 24px rgba(2, 6, 23, 0.35);
+    font-size: 0.76rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .editor-diag-popover-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.22rem;
+  }
+
+  .editor-diag-popover-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    font-weight: 700;
+  }
+
+  .editor-diag-quickfix-btn {
+    align-self: flex-start;
+    margin-block-start: 0.15rem;
+    padding: 0.18rem 0.5rem;
+    border-radius: 0.32rem;
+    border: 1px solid var(--brand-mint);
+    background-color: color-mix(in srgb, var(--brand-mint) 16%, var(--bg-subtle));
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .editor-diag-quickfix-btn:hover {
+    background-color: color-mix(in srgb, var(--brand-mint) 28%, var(--bg-subtle));
   }
 
   .pattern-highlight-backdrop {
