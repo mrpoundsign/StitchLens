@@ -946,6 +946,8 @@ export function App() {
                   </span>
                 );
               })}
+              <span className="gutter-line-num" aria-hidden="true" />
+              <span className="gutter-line-num" aria-hidden="true" />
             </div>
             <pre
               ref={highlightBackdropRef}
@@ -957,12 +959,18 @@ export function App() {
                 return (
                   <div
                     key={idx}
-                    className={sev ? `backdrop-line-diag-${sev}` : undefined}
+                    className={`backdrop-line ${sev ? `backdrop-line-diag-${sev}` : ''}`}
                   >
                     {node}
                   </div>
                 );
               })}
+              <div className="backdrop-line" aria-hidden="true">
+                {'\u00A0'}
+              </div>
+              <div className="backdrop-line" aria-hidden="true">
+                {'\u00A0'}
+              </div>
             </pre>
             <textarea
               ref={textareaRef}

@@ -46,7 +46,7 @@ export function highlightPatternLine(
   diagnosticSeverity?: 'error' | 'warning' | 'info'
 ): ReactNode {
   if (rawLine.length === 0) {
-    return '\n';
+    return '\u00A0';
   }
 
   // Separate trailing inline comment (" // ..." or " # ..." not hex)

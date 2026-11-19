@@ -90,7 +90,11 @@ function seedInitialPositions(pattern: CompiledPattern, pos: Float32Array): void
     const pieceRows = rows.filter((r) => r.pieceId === piece.id);
     if (pieceRows.length === 0) continue;
 
-    if (piece.workMode === 'flat_rows') {
+    const startsInRound =
+      piece.stitchIds.some((id) => stitches[id].kind === 'magic_ring') ||
+      pieceRows.some((r) => r.workMode !== 'flat_rows');
+
+    if (piece.workMode === 'flat_rows' && !startsInRound) {
       seedFlatPiece(piece, pieceRows, stitches, pos);
     } else {
       seedRoundPiece(piece, pieceRows, stitches, pos);
@@ -536,6 +540,35 @@ function seedRoundPiece(
       }
 
       prevRadius = targetRadius;
+      continue;
+    }
+
+    if (row.workMode === 'flat_rows' && rIdx > 0) {
+      // Partial flat flap row attached to a round cap (e.g., Hair Rows 13-15 neck flap):
+      // seed each stitch directly above its parent anchor on the cylinder rim!
+      currentY += avgHeight * 0.96;
+      for (let k = 0; k < n; k++) {
+        const id = ringIds[k];
+        const st = stitches[id];
+        const ancId = st.anchors[0]?.targetStitchId;
+        if (ancId !== undefined && ancId < id) {
+          pos[id * 3] = pos[ancId * 3];
+          pos[id * 3 + 1] = pos[ancId * 3 + 1] + STITCH_DIMENSIONS[st.kind].height * 0.96;
+          pos[id * 3 + 2] = pos[ancId * 3 + 2];
+        } else {
+          const theta = (k / Math.max(1, n)) * Math.PI;
+          pos[id * 3] = Math.cos(theta) * prevRadius;
+          pos[id * 3 + 1] = currentY;
+          pos[id * 3 + 2] = Math.sin(theta) * prevRadius;
+        }
+      }
+      for (let t = 0; t < turningIds.length; t++) {
+        const tid = turningIds[t];
+        const baseId = stitches[tid].prevStitchId ?? ringIds[0];
+        pos[tid * 3] = pos[baseId * 3];
+        pos[tid * 3 + 1] = pos[baseId * 3 + 1] + 0.35;
+        pos[tid * 3 + 2] = pos[baseId * 3 + 2];
+      }
       continue;
     }
 

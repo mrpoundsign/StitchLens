@@ -104,9 +104,9 @@ class PieceCompiler {
     const gridCol = pieceIndex % 4;
     const gridRow = Math.floor(pieceIndex / 4);
     const defaultOffset: [number, number, number] = this.piece.defaultOffset ?? [
-      gridCol * 13,
+      gridCol * 18,
       0,
-      gridRow * 13,
+      gridRow * 18,
     ];
     const defaultRotation: [number, number, number] = this.piece.defaultRotation ?? [0, 0, 0];
 

@@ -352,6 +352,55 @@ Shield:
     expect(implicitRows.every((r) => r.pieceId === 'shield')).toBe(true);
     expect(implicitRows.length).toBe(4);
   });
+
+  it('seeds round-to-flat hybrid pieces (like a Hair cap with back-and-forth neck flap rows) as a compact 3D dome instead of a wide flat fan', () => {
+    const hairAndEars = `
+Hair:
+Colour: Mustard
+@stuffed false
+1. 6 sc in a magic ring (6)
+2. 6 inc (12)
+3. (sc, inc) x 6 (18)
+4. (2 sc, inc) x 6 (24)
+5. (3 sc, inc) x 6 (30)
+6. (4sc, inc) x 6 (36)
+7-12. 36 sc (36)
+13. 15 sc, ch, turn (15)
+14. 15 sc, ch, turn (15)
+15. 15 sc (15)
+
+Ears (make 2):
+Colour: Skin tone
+@stuffed false
+1. 6 sc in a magic ring (6)
+2. 6 sc (6)
+3. (2 sc, inc) x 2 (8)
+`;
+    const compiled = compilePattern(hairAndEars);
+    const geom = solveStitchGeometry(compiled);
+    const [hairPiece, earsPiece] = compiled.pieces;
+
+    let hairMinX = Infinity;
+    let hairMaxX = -Infinity;
+    let hairMinZ = Infinity;
+    let hairMaxZ = -Infinity;
+    for (const id of hairPiece.stitchIds) {
+      hairMinX = Math.min(hairMinX, geom.positions[id * 3]);
+      hairMaxX = Math.max(hairMaxX, geom.positions[id * 3]);
+      hairMinZ = Math.min(hairMinZ, geom.positions[id * 3 + 2]);
+      hairMaxZ = Math.max(hairMaxZ, geom.positions[id * 3 + 2]);
+    }
+    // Hair cap (36 sc circumference) should have diameter ~11-13 units in both X and Z, NOT a 35-unit flat sheet!
+    expect(hairMaxX - hairMinX).toBeLessThan(15);
+    expect(hairMaxZ - hairMinZ).toBeGreaterThan(8);
+
+    // And Hair's bounding box must not overlap Ears' bounding box in the kit grid
+    let earsMinX = Infinity;
+    for (const id of earsPiece.stitchIds) {
+      earsMinX = Math.min(earsMinX, geom.positions[id * 3]);
+    }
+    expect(earsMinX).toBeGreaterThan(hairMaxX + 2);
+  });
 });
 
 function computeBounds(pos: Float32Array): {
