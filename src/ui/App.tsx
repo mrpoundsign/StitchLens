@@ -20,8 +20,27 @@ import {
   STITCH_TYPE_COLORS,
 } from '../renderer/CrochetViewport';
 import { decodeShareHash, encodeShareHash } from '../utils/shareCodec';
+import {
+  createBuffer,
+  deleteBuffer,
+  duplicateBuffer,
+  getActiveBuffer,
+  inferBufferNameFromPattern,
+  loadBufferStore,
+  mergeExternalBufferStore,
+  openPatternInSmartBuffer,
+  parseBufferStore,
+  PatternBufferStore,
+  renameBuffer,
+  saveBufferStore,
+  STORAGE_KEY_BUFFERS,
+  stripTxtExtension,
+  toDownloadFileName,
+  updateBufferContent,
+} from '../utils/patternBuffers';
 import type { SimWorkerRequest, SimWorkerResponse } from '../workers/sim.worker';
 import { AboutCreditsDialog } from './AboutCreditsDialog';
+import { BufferBar } from './BufferBar';
 import { ExampleGalleryDialog } from './ExampleGalleryDialog';
 import { SyntaxGuideDialog } from './SyntaxGuideDialog';
 import { highlightPatternLine } from './syntaxHighlight';
@@ -38,31 +57,6 @@ const SITE_LABELS: Record<AttachmentSite, string> = {
   row_end_post: 'side row-end edge',
   ring_center: 'center of Magic Ring',
 };
-
-const STORAGE_KEY_PATTERN = 'stitchlens.currentPattern.v1';
-const STORAGE_KEY_DIALECT = 'stitchlens.currentDialect.v1';
-
-function loadInitialPatternFromStorage(): string {
-  if (typeof window === 'undefined') return '';
-  try {
-    return localStorage.getItem(STORAGE_KEY_PATTERN) ?? '';
-  } catch {
-    return '';
-  }
-}
-
-function loadInitialDialectFromStorage(): CrochetDialect {
-  if (typeof window === 'undefined') return 'US';
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY_DIALECT);
-    if (saved === 'US' || saved === 'UK' || saved === 'ES') {
-      return saved;
-    }
-    return 'US';
-  } catch {
-    return 'US';
-  }
-}
 
 function detectDarkTheme(): boolean {
   if (typeof document === 'undefined') return true;
@@ -119,10 +113,19 @@ export function computeGraphFingerprint(
 }
 
 export function App() {
-  const [activeExampleId, setActiveExampleId] = useState<string>('custom');
-  const [patternText, setPatternText] = useState<string>(loadInitialPatternFromStorage);
-  const [debouncedPatternText, setDebouncedPatternText] = useState<string>(patternText);
-  const [dialect, setDialect] = useState<CrochetDialect>(loadInitialDialectFromStorage);
+  const [bufferStore, setBufferStore] = useState<PatternBufferStore>(() => loadBufferStore());
+  const activeBuffer = getActiveBuffer(bufferStore);
+  const dialect = activeBuffer.dialect;
+
+  const [patternText, setPatternText] = useState<string>(() => activeBuffer.patternText);
+  const [debouncedPatternText, setDebouncedPatternText] = useState<string>(
+    () => activeBuffer.patternText
+  );
+
+  const activeExampleId =
+    activeBuffer.sourceExampleId && patternText === activeBuffer.patternText
+      ? activeBuffer.sourceExampleId
+      : 'custom';
 
   const [viewMode, setViewMode] = useState<RenderViewMode>('yarn');
   const [colorMode, setColorMode] = useState<ColorSchemeMode>('yarn');
@@ -141,13 +144,13 @@ export function App() {
   const [outlineHeight, setOutlineHeight] = useState<number>(210);
   const [draggingAxis, setDraggingAxis] = useState<'col' | 'row' | null>(null);
   const [pinningPieceId, setPinningPieceId] = useState<string | null>(null);
-  const [loadedFileName, setLoadedFileName] = useState<string | null>(null);
   const [hoveredDiagLine, setHoveredDiagLine] = useState<{ line: number; topPx: number } | null>(
     null
   );
   const hoverCloseTimerRef = useRef<number | null>(null);
 
   const sliderId = useId();
+  const activeTabId = useId();
   const dialectSelectId = useId();
   const colorModeSelectId = useId();
   const pinPieceSelectId = useId();
@@ -170,6 +173,18 @@ export function App() {
   const reqCounterRef = useRef<number>(0);
   const needsCameraFitRef = useRef<boolean>(true);
 
+  const bufferStoreRef = useRef<PatternBufferStore>(bufferStore);
+  const patternTextRef = useRef<string>(patternText);
+  const quotaWarnedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    bufferStoreRef.current = bufferStore;
+  }, [bufferStore]);
+
+  useEffect(() => {
+    patternTextRef.current = patternText;
+  }, [patternText]);
+
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
     window.setTimeout(() => {
@@ -177,56 +192,162 @@ export function App() {
     }, 2800);
   }, []);
 
-  // Load `?example=<id>` query parameter or compressed `#z=...` share state on startup
+  const persistAndSetStore = useCallback(
+    (nextStore: PatternBufferStore) => {
+      bufferStoreRef.current = nextStore;
+      setBufferStore(nextStore);
+      const res = saveBufferStore(nextStore);
+      if (!res.ok && res.error === 'quota') {
+        if (!quotaWarnedRef.current) {
+          quotaWarnedRef.current = true;
+          showToast('Browser storage is full — export a .txt backup or delete old buffers.');
+        }
+      } else if (res.ok) {
+        quotaWarnedRef.current = false;
+      }
+    },
+    [showToast]
+  );
+
+  const flushActiveBufferEdits = useCallback((): PatternBufferStore => {
+    const curStore = bufferStoreRef.current;
+    const curActive = getActiveBuffer(curStore);
+    const latestText = patternTextRef.current;
+    if (latestText === curActive.patternText) {
+      return curStore;
+    }
+    const updated = updateBufferContent(curStore, curActive.id, {
+      patternText: latestText,
+      sourceExampleId: null,
+    });
+    persistAndSetStore(updated);
+    return updated;
+  }, [persistAndSetStore]);
+
+  const activateBufferState = useCallback(
+    (
+      nextStore: PatternBufferStore,
+      opts?: { fitCamera?: boolean; clearUrl?: boolean; step?: number }
+    ) => {
+      const nextActive = getActiveBuffer(nextStore);
+      persistAndSetStore(nextStore);
+      patternTextRef.current = nextActive.patternText;
+      setPatternText(nextActive.patternText);
+      setDebouncedPatternText(nextActive.patternText);
+      setIsPlaying(false);
+      setSoloPieceId(null);
+      setPinningPieceId(null);
+      setHoveredDiagLine(null);
+      if (opts?.fitCamera !== false) {
+        needsCameraFitRef.current = true;
+      }
+      setCurrentStep(opts?.step ?? 999999);
+      if (opts?.clearUrl && (window.location.hash || window.location.search)) {
+        history.replaceState(null, '', window.location.pathname);
+      }
+    },
+    [persistAndSetStore]
+  );
+
+  // Load `?example=<id>` query parameter or compressed `#z=...` share state non-destructively on startup
   useEffect(() => {
+    let cancelled = false;
+
     const params = new URLSearchParams(window.location.search);
     const requestedExId = params.get('example');
     if (requestedExId) {
       const found = EXAMPLE_PATTERNS.find((e) => e.id === requestedExId);
       if (found) {
-        needsCameraFitRef.current = true;
-        setActiveExampleId(found.id);
-        setDialect(found.dialect);
-        setPatternText(found.patternText);
+        const result = openPatternInSmartBuffer(bufferStoreRef.current, {
+          name: found.title,
+          patternText: found.patternText,
+          dialect: found.dialect,
+          sourceExampleId: found.id,
+          reuseUnmodifiedExample: true,
+        });
+        activateBufferState(result.store, { fitCamera: true, clearUrl: false });
       }
     }
 
     if (window.location.hash.length > 3) {
       void decodeShareHash(window.location.hash).then((decoded) => {
-        if (!decoded || !decoded.p) return;
-        needsCameraFitRef.current = true;
-        setActiveExampleId('custom');
-        setPatternText(decoded.p);
-        if (decoded.d) setDialect(decoded.d);
+        if (cancelled || !decoded || !decoded.p) return;
+        const result = openPatternInSmartBuffer(bufferStoreRef.current, {
+          name: inferBufferNameFromPattern(decoded.p, 'Shared Pattern'),
+          patternText: decoded.p,
+          dialect: decoded.d ?? 'US',
+          sourceExampleId: null,
+          reuseUnmodifiedExample: false,
+          reuseExactMatch: true,
+        });
+        activateBufferState(result.store, {
+          fitCamera: true,
+          clearUrl: false,
+          step: typeof decoded.s === 'number' ? decoded.s : 999999,
+        });
         if (decoded.m) setViewMode(decoded.m);
         if (decoded.h === 'L') setLeftHanded(true);
-        if (typeof decoded.s === 'number') {
-          setCurrentStep(decoded.s);
-        }
       });
     }
-  }, []);
 
-  // Debounce pattern compilation & localStorage writes so rapid typing in large patterns stays 60fps instant
+    return () => {
+      cancelled = true;
+    };
+  }, [activateBufferState]);
+
+  // Debounce pattern compilation & buffer persistence so rapid typing in large patterns stays 60fps instant
   useEffect(() => {
+    patternTextRef.current = patternText;
     const timer = window.setTimeout(() => {
       setDebouncedPatternText(patternText);
-      try {
-        localStorage.setItem(STORAGE_KEY_PATTERN, patternText);
-      } catch {
-        // Ignore storage block
+      const curStore = bufferStoreRef.current;
+      const curActive = getActiveBuffer(curStore);
+      if (patternText !== curActive.patternText) {
+        const updated = updateBufferContent(curStore, curActive.id, {
+          patternText,
+          sourceExampleId: null,
+        });
+        persistAndSetStore(updated);
       }
     }, 260);
     return () => window.clearTimeout(timer);
-  }, [patternText]);
+  }, [patternText, persistAndSetStore]);
 
+  // Flush unsaved debounced keystrokes before tab close or backgrounding
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_DIALECT, dialect);
-    } catch {
-      // Ignore storage block
-    }
-  }, [dialect]);
+    const onBeforeUnload = () => {
+      flushActiveBufferEdits();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushActiveBufferEdits();
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [flushActiveBufferEdits]);
+
+  // Sync buffers added/updated/deleted in another browser tab without overwriting this tab's active buffer
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEY_BUFFERS || !e.newValue) return;
+      const external = parseBufferStore(e.newValue);
+      if (!external) return;
+      const merged = mergeExternalBufferStore(
+        bufferStoreRef.current,
+        external,
+        patternTextRef.current
+      );
+      bufferStoreRef.current = merged;
+      setBufferStore(merged);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   // Listen to OS color-scheme changes
   useEffect(() => {
@@ -259,10 +380,11 @@ export function App() {
           );
 
           setPatternText((prev) => {
-            if (existingRegex.test(prev)) {
-              return prev.replace(existingRegex, newSentence);
-            }
-            return `${prev.trimEnd()}\n\n${newSentence}`;
+            const next = existingRegex.test(prev)
+              ? prev.replace(existingRegex, newSentence)
+              : `${prev.trimEnd()}\n\n${newSentence}`;
+            patternTextRef.current = next;
+            return next;
           });
           setPinningPieceId(null);
           showToast(
@@ -481,11 +603,13 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [isPlaying, scopeMinStep, scopeMaxStep]);
 
-  // Global keyboard arrow shortcuts when focus isn't inside the pattern textarea
+  // Global keyboard arrow shortcuts when focus isn't inside the pattern textarea, tablist, or modal dialog
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement | null)?.tagName;
+      const targetEl = e.target as HTMLElement | null;
+      const tag = targetEl?.tagName;
       if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return;
+      if (targetEl?.closest('[role="tablist"], dialog[open]')) return;
       if (e.key === 'ArrowRight') {
         e.preventDefault();
         setIsPlaying(false);
@@ -557,89 +681,121 @@ export function App() {
     setCurrentStep(scopedRows[nextIdx].lastStitchId);
   };
 
+  const handleSelectBuffer = (id: string) => {
+    if (id === activeBuffer.id) return;
+    const flushed = flushActiveBufferEdits();
+    if (!flushed.buffers.some((b) => b.id === id)) return;
+    activateBufferState(
+      { ...flushed, activeBufferId: id },
+      { fitCamera: true, clearUrl: true }
+    );
+  };
+
+  const handleCreateBuffer = () => {
+    const flushed = flushActiveBufferEdits();
+    const { store } = createBuffer(flushed);
+    activateBufferState(store, { fitCamera: true, clearUrl: true });
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const handleRenameBuffer = (id: string, nextName: string) => {
+    const flushed = flushActiveBufferEdits();
+    persistAndSetStore(renameBuffer(flushed, id, nextName));
+  };
+
+  const handleDuplicateBuffer = (id: string) => {
+    const flushed = flushActiveBufferEdits();
+    const { store, buffer } = duplicateBuffer(flushed, id);
+    activateBufferState(store, { fitCamera: false, clearUrl: true });
+    showToast(`Duplicated to "${buffer.name}"`);
+  };
+
+  const handleDeleteBuffer = (id: string) => {
+    const flushed = flushActiveBufferEdits();
+    const target = flushed.buffers.find((b) => b.id === id);
+    const { store, clearedLast } = deleteBuffer(flushed, id);
+    activateBufferState(store, { fitCamera: true, clearUrl: true });
+    showToast(clearedLast ? 'Cleared buffer' : `Deleted "${target?.name ?? 'buffer'}"`);
+  };
+
   const handleSelectExample = (ex: ExamplePattern) => {
-    setIsPlaying(false);
-    needsCameraFitRef.current = true;
-    setSoloPieceId(null);
-    setPinningPieceId(null);
-    setLoadedFileName(null);
-    setActiveExampleId(ex.id);
-    setDialect(ex.dialect);
-    setPatternText(ex.patternText);
-    setDebouncedPatternText(ex.patternText);
-    setCurrentStep(999999);
-    if (window.location.hash || window.location.search) {
-      history.replaceState(null, '', window.location.pathname);
+    const flushed = flushActiveBufferEdits();
+    const { store, mode } = openPatternInSmartBuffer(flushed, {
+      name: ex.title,
+      patternText: ex.patternText,
+      dialect: ex.dialect,
+      sourceExampleId: ex.id,
+      reuseUnmodifiedExample: true,
+    });
+    activateBufferState(store, { fitCamera: true, clearUrl: true });
+    if (mode === 'created-new') {
+      showToast(`Opened "${ex.title}" in a new buffer`);
     }
   };
 
   const loadTxtFile = async (file: File) => {
     try {
       const text = await file.text();
-      setIsPlaying(false);
-      needsCameraFitRef.current = true;
-      setSoloPieceId(null);
-      setPinningPieceId(null);
-      setActiveExampleId('custom');
-      setLoadedFileName(file.name);
       const detected = detectPatternDialect(text);
-      if (detected && detected !== dialect) {
-        setDialect(detected);
-      }
-      setPatternText(text);
-      setDebouncedPatternText(text);
-      setCurrentStep(999999);
-      showToast(
-        detected
-          ? `Loaded "${file.name}" (${DIALECT_LABELS[detected]})`
-          : `Loaded "${file.name}"`
-      );
+      const flushed = flushActiveBufferEdits();
+      const curActive = getActiveBuffer(flushed);
+      const { store, mode } = openPatternInSmartBuffer(flushed, {
+        name: stripTxtExtension(file.name),
+        patternText: text,
+        dialect: detected ?? curActive.dialect,
+        sourceExampleId: null,
+        reuseUnmodifiedExample: false,
+      });
+      activateBufferState(store, { fitCamera: true, clearUrl: true });
+      const dialectLabel = detected ? ` (${DIALECT_LABELS[detected]})` : '';
+      const newBufNote = mode === 'created-new' ? ' in a new buffer' : '';
+      showToast(`Loaded "${file.name}"${dialectLabel}${newBufNote}`);
     } catch {
       showToast('Could not read that .txt file.');
     }
   };
 
   const handleChangeDialect = (nextDialect: CrochetDialect) => {
-    if (nextDialect === dialect) return;
-    const prevDialect = dialect;
-    setDialect(nextDialect);
+    const flushed = flushActiveBufferEdits();
+    const curActive = getActiveBuffer(flushed);
+    const prevDialect = curActive.dialect;
+    if (nextDialect === prevDialect) return;
 
-    if (!patternText.trim()) {
+    const currentText = patternTextRef.current;
+    if (!currentText.trim()) {
+      const updated = updateBufferContent(flushed, curActive.id, { dialect: nextDialect });
+      persistAndSetStore(updated);
       showToast(`Switched terms to ${DIALECT_LABELS[nextDialect]}`);
       return;
     }
 
     const { text: convertedText, replacedCount } = transcribePatternDialect(
-      patternText,
+      currentText,
       prevDialect,
       nextDialect
     );
     if (replacedCount > 0) {
-      setActiveExampleId('custom');
+      const updated = updateBufferContent(flushed, curActive.id, {
+        dialect: nextDialect,
+        patternText: convertedText,
+        sourceExampleId: null,
+      });
+      patternTextRef.current = convertedText;
       setPatternText(convertedText);
       setDebouncedPatternText(convertedText);
+      persistAndSetStore(updated);
       showToast(
         `Transcribed ${replacedCount} stitch term${replacedCount === 1 ? '' : 's'} from ${prevDialect} to ${DIALECT_LABELS[nextDialect]}!`
       );
     } else {
+      const updated = updateBufferContent(flushed, curActive.id, { dialect: nextDialect });
+      persistAndSetStore(updated);
       showToast(`Switched terms to ${DIALECT_LABELS[nextDialect]}`);
     }
   };
 
   const handleSaveTxtFile = () => {
-    let baseName = loadedFileName;
-    if (!baseName) {
-      const ex = EXAMPLE_PATTERNS.find((e) => e.id === activeExampleId);
-      const rawTitle = ex?.title ?? compiled.pieces[0]?.name ?? 'crochet-pattern';
-      const slug =
-        rawTitle
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '') || 'crochet-pattern';
-      baseName = `${slug}.txt`;
-    } else if (!baseName.toLowerCase().endsWith('.txt')) {
-      baseName = `${baseName}.txt`;
-    }
+    const baseName = toDownloadFileName(activeBuffer.name, compiled.pieces[0]?.name);
 
     const blob = new Blob([patternText], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -702,6 +858,20 @@ export function App() {
     [compiled.rows]
   );
 
+  const applyImmediatePatternEdit = (updated: string) => {
+    patternTextRef.current = updated;
+    setPatternText(updated);
+    setDebouncedPatternText(updated);
+    const curStore = bufferStoreRef.current;
+    const curActive = getActiveBuffer(curStore);
+    persistAndSetStore(
+      updateBufferContent(curStore, curActive.id, {
+        patternText: updated,
+        sourceExampleId: null,
+      })
+    );
+  };
+
   const handleInsertExplicitTurns = () => {
     const targetLines = new Set(implicitTurnRows.map((r) => r.sourceLine));
     const updated = patternText
@@ -714,8 +884,7 @@ export function App() {
         );
       })
       .join('\n');
-    setPatternText(updated);
-    setDebouncedPatternText(updated);
+    applyImmediatePatternEdit(updated);
     showToast(`Added explicit "Chain, turn," to ${targetLines.size} flat row(s)!`);
   };
 
@@ -813,8 +982,7 @@ export function App() {
         return `${line.trimEnd()} (${expectedCount})`;
       })
       .join('\n');
-    setPatternText(updated);
-    setDebouncedPatternText(updated);
+    applyImmediatePatternEdit(updated);
     setHoveredDiagLine(null);
     showToast(`Updated Line ${lineNum} stitch count to (${expectedCount})!`);
   };
@@ -878,7 +1046,7 @@ export function App() {
             />
           </svg>
           <h1>StitchLens</h1>
-          <span className="brand-badge">v0.0.7 &middot; 3D Crochet Visualizer</span>
+          <span className="brand-badge">v0.0.8 &middot; 3D Crochet Visualizer</span>
         </div>
 
         <div className="header-actions">
@@ -915,7 +1083,7 @@ export function App() {
             rel="noopener noreferrer"
             className="btn btn-report-issue"
           >
-            ! Report Issue (v0.0.7)
+            ! Report Issue (v0.0.8)
           </a>
 
           <button
@@ -934,14 +1102,30 @@ export function App() {
         data-mobile-tab={mobileTab}
         style={{ '--editor-width': `${editorWidth}px` } as React.CSSProperties}
       >
-        {/* Left Pane: Live Crochet Scratchpad + Stitch-Count Outline */}
+        {/* Left Pane: Multi-Buffer Tabs + Live Crochet Scratchpad + Stitch-Count Outline */}
         <aside
           ref={editorPaneRef}
           className="editor-pane"
           aria-label="Pattern Scratchpad and Row Counts"
           style={{ '--outline-height': `${outlineHeight}px` } as React.CSSProperties}
         >
-          <div className="pane-toolbar">
+          <BufferBar
+            buffers={bufferStore.buffers}
+            activeBufferId={activeBuffer.id}
+            activeTabId={activeTabId}
+            onSelectBuffer={handleSelectBuffer}
+            onCreateBuffer={handleCreateBuffer}
+            onRenameBuffer={handleRenameBuffer}
+            onDuplicateBuffer={handleDuplicateBuffer}
+            onDeleteBuffer={handleDeleteBuffer}
+          />
+
+          <div
+            className="editor-tabpanel"
+            role="tabpanel"
+            aria-labelledby={activeTabId}
+          >
+            <div className="pane-toolbar">
             <div className="pane-toolbar-group">
               <label htmlFor={dialectSelectId} style={{ fontSize: '0.76rem', fontWeight: 600 }}>
                 Terms:
@@ -1130,8 +1314,9 @@ export function App() {
                     }
                   }}
                   onChange={(e) => {
-                    setActiveExampleId('custom');
-                    setPatternText(e.target.value);
+                    const nextVal = e.target.value;
+                    patternTextRef.current = nextVal;
+                    setPatternText(nextVal);
                   }}
                 />
               </div>
@@ -1349,6 +1534,7 @@ export function App() {
                 );
               })}
             </ul>
+          </div>
           </div>
         </aside>
 

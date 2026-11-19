@@ -1,5 +1,29 @@
 @layer base, theme, layout, components, utilities;
 
+@property --fade-start {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --fade-end {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes reveal-fade-start {
+  to {
+    --fade-start: var(--fade-size);
+  }
+}
+
+@keyframes hide-fade-end {
+  from {
+    --fade-end: var(--fade-size);
+  }
+}
+
 @layer theme {
   :root {
     /* Light tokens */
@@ -304,6 +328,207 @@
     min-inline-size: 0;
     overflow: hidden;
     background-color: var(--bg-surface);
+  }
+
+  .buffer-bar {
+    flex-shrink: 0;
+    display: flex;
+    align-items: stretch;
+    gap: 0.3rem;
+    padding-inline: 0.45rem;
+    background-color: var(--bg-canvas);
+    border-block-end: 1px solid var(--border-ui);
+    min-block-size: 2.35rem;
+  }
+
+  .buffer-tablist {
+    --fade-size: 1.5rem;
+    --fade-dir: right;
+    --fade-start-pos: 0;
+    --fade-end-pos: 100%;
+    --scrollbar-thumb: var(--text-secondary);
+    --scrollbar-track: transparent;
+
+    flex: 1 1 0;
+    min-inline-size: 0;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 0.15rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: inline proximity;
+    scroll-padding-inline: var(--fade-size);
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    mask:
+      linear-gradient(black, black) no-clip subtract,
+      linear-gradient(to var(--fade-dir), black, transparent) var(--fade-start-pos) 0 /
+        var(--fade-start) 100% no-repeat no-clip,
+      linear-gradient(to var(--fade-dir), transparent, black) var(--fade-end-pos) 0 /
+        var(--fade-end) 100% no-repeat no-clip;
+    animation: reveal-fade-start linear both, hide-fade-end linear both;
+    animation-timeline: scroll(self inline);
+    animation-range: 0 var(--fade-size), calc(100% - var(--fade-size)) 100%;
+
+    &:dir(rtl) {
+      --fade-dir: left;
+      --fade-start-pos: 100%;
+      --fade-end-pos: 0;
+    }
+  }
+
+  @supports not (scrollbar-color: auto) {
+    .buffer-tablist {
+      scrollbar-width: auto;
+    }
+
+    .buffer-tablist::-webkit-scrollbar {
+      height: 6px;
+    }
+
+    .buffer-tablist::-webkit-scrollbar-thumb {
+      background: var(--scrollbar-thumb);
+      border-radius: 999px;
+    }
+
+    .buffer-tablist::-webkit-scrollbar-track {
+      background: var(--scrollbar-track);
+    }
+  }
+
+  @supports not (animation-timeline: scroll()) {
+    .buffer-tablist {
+      animation: none;
+      transition: --fade-start 0.2s, --fade-end 0.2s;
+    }
+
+    .buffer-tablist.more-start {
+      --fade-start: var(--fade-size);
+    }
+
+    .buffer-tablist.more-end {
+      --fade-end: var(--fade-size);
+    }
+  }
+
+  .buffer-tab {
+    position: relative;
+    flex: 0 0 auto;
+    max-inline-size: 11.5rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.35rem 0.65rem;
+    border: 0;
+    border-radius: 0.35rem 0.35rem 0 0;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.77rem;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    scroll-snap-align: start;
+  }
+
+  .buffer-tab:hover {
+    background-color: var(--bg-subtle);
+    color: var(--text-primary);
+  }
+
+  .buffer-tab:focus-visible {
+    outline-offset: -2px;
+  }
+
+  .buffer-tab[aria-selected='true'] {
+    background-color: var(--bg-surface);
+    color: var(--text-primary);
+  }
+
+  .buffer-tab[aria-selected='true']::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 0;
+    border-block-end: 2.5px solid var(--brand-accent);
+  }
+
+  .buffer-tab-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .buffer-tab-dialect {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    font-weight: 700;
+    padding-inline: 0.25rem;
+    border-radius: 0.22rem;
+    border: 1px solid var(--border-ui);
+    background-color: var(--bg-subtle);
+    color: var(--text-secondary);
+  }
+
+  .buffer-bar-actions {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding-block: 0.2rem;
+  }
+
+  .buffer-action-btn {
+    min-block-size: 1.7rem;
+    min-inline-size: 1.7rem;
+    padding-block: 0.15rem;
+    padding-inline: 0.4rem;
+    font-size: 0.76rem;
+    line-height: 1;
+  }
+
+  @media (pointer: coarse) {
+    .buffer-action-btn {
+      min-block-size: 2.25rem;
+      min-inline-size: 2.25rem;
+      padding-inline: 0.5rem;
+    }
+  }
+
+  .buffer-action-btn-danger:hover:not(:disabled) {
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.55);
+  }
+
+  .buffer-rename-form {
+    flex: 1 1 0;
+    min-inline-size: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding-block: 0.22rem;
+  }
+
+  .buffer-rename-input {
+    flex: 1 1 0;
+    min-inline-size: 0;
+    block-size: 1.75rem;
+    padding-inline: 0.5rem;
+    border-radius: 0.35rem;
+    border: 1px solid var(--brand-accent);
+    background-color: var(--bg-surface);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.78rem;
+  }
+
+  .editor-tabpanel {
+    flex: 1 1 0;
+    min-block-size: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .pane-toolbar {
@@ -1041,6 +1266,35 @@
   .dialog-body {
     padding: 1.15rem 1.25rem;
     overflow-y: auto;
+  }
+
+  dialog.modal-sheet-compact {
+    max-inline-size: min(26rem, calc(100vw - 2rem));
+  }
+
+  .buffer-confirm-copy {
+    margin: 0 0 1rem;
+    font-size: 0.86rem;
+    color: var(--text-secondary);
+  }
+
+  .dialog-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  .btn-danger {
+    background-color: #dc2626;
+    border-color: #b91c1c;
+    color: #ffffff;
+    font-weight: 600;
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background-color: #ef4444;
+    border-color: #dc2626;
   }
 
   .example-grid {
