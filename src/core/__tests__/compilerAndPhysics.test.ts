@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { compilePattern } from '../compiler/virtualHook';
+import { resolveYarnColor } from '../parser/colors';
 import {
   detectPatternDialect,
   transcribePatternDialect,
 } from '../parser/transcribeDialect';
 import { solveStitchGeometry } from '../physics/solver';
 import { EXAMPLE_PATTERNS } from '../../examples/catalog';
+import { computeGraphFingerprint } from '../../ui/App';
 import { highlightPatternLine } from '../../ui/syntaxHighlight';
+import { decodeShareHash, encodeShareHash } from '../../utils/shareCodec';
 
 describe('StitchLens Core Compiler & XPBD 3D Geometry', () => {
   it('compiles the exact partial MS Word screenshot snippet (starting mid-pattern at Row 3!)', () => {
@@ -662,6 +665,124 @@ Plushie Boot:
     // Every neighbor link (including seam closure) should be close to 1 stitch width (~0.75 - 1.45), never stretched to 2.5+!
     expect(maxStepDist).toBeLessThan(1.5);
     expect(minStepDist).toBeGreaterThan(0.55);
+  });
+
+  it('seeds auto-inferred circular foundations (for joined-limb or FLO-attached pieces) on their own 360-degree foundation ring directly below Round 1', () => {
+    const inferredCircularPattern = `
+Mid-Body Tube:
+11. Make 10 sc in each leg for a total of 20 sc (20)
+12. 20 sc (20)
+`;
+    const compiled = compilePattern(inferredCircularPattern);
+    const geom = solveStitchGeometry(compiled);
+
+    const foundationChains = compiled.stitches.filter((s) => s.kind === 'ch');
+    const round11Stitches = compiled.stitches.filter((s) => s.rowNumber === 11 && s.kind === 'sc');
+    expect(foundationChains.length).toBe(20);
+    expect(round11Stitches.length).toBe(20);
+
+    // Every stitch in Round 11 must sit directly above its parent foundation chain (short ~0.9-1.35 post length),
+    // never stretched across the diameter of the circle (>2.0)!
+    for (const st of round11Stitches) {
+      const parentId = st.anchors[0]!.targetStitchId;
+      const postLen = Math.hypot(
+        geom.positions[st.id * 3] - geom.positions[parentId * 3],
+        geom.positions[st.id * 3 + 1] - geom.positions[parentId * 3 + 1],
+        geom.positions[st.id * 3 + 2] - geom.positions[parentId * 3 + 2]
+      );
+      expect(postLen).toBeLessThan(1.55);
+      expect(geom.positions[st.id * 3 + 1]).toBeGreaterThan(geom.positions[parentId * 3 + 1] + 0.2);
+    }
+  });
+
+  it('round-trips URL share state (encodeShareHash / decodeShareHash) and handles invalid hashes gracefully', async () => {
+    const sampleState = {
+      p: 'Head [tan]:\n1. 6 sc in a magic ring (6)\n2. 6 inc (12)',
+      s: 8,
+      d: 'UK' as const,
+      m: 'diagram' as const,
+      h: 'L' as const,
+    };
+    const hash = await encodeShareHash(sampleState);
+    expect(hash.startsWith('#z=') || hash.startsWith('#u=')).toBe(true);
+
+    const decoded = await decodeShareHash(hash);
+    expect(decoded).toEqual(sampleState);
+
+    // Also test uncompressed `#u=` fallback directly
+    const rawJson = JSON.stringify(sampleState);
+    const b64 = btoa(rawJson).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    const decodedUncompressed = await decodeShareHash(`#u=${b64}`);
+    expect(decodedUncompressed).toEqual(sampleState);
+
+    // Invalid / short hashes return null without throwing
+    expect(await decodeShareHash('')).toBeNull();
+    expect(await decodeShareHash('#x')).toBeNull();
+    expect(await decodeShareHash('#z=!!!invalid_base64!!!')).toBeNull();
+  });
+
+  it('resolves named yarn colors, 3-digit & 6-digit hex codes, multi-word compounds, and fallback defaults', () => {
+    expect(resolveYarnColor('#38bdf8')).toBe('#38BDF8');
+    expect(resolveYarnColor('#f80')).toBe('#FF8800');
+    expect(resolveYarnColor('Mustard')).toBe('#CA8A04');
+    expect(resolveYarnColor('golden brown')).toBe('#B45309');
+    expect(resolveYarnColor('skin tone')).toBe('#FDBA74');
+    expect(resolveYarnColor('dark green')).toBe('#15803D');
+    expect(resolveYarnColor('light blue')).toBe('#7DD3FC');
+    expect(resolveYarnColor('dark grey')).toBe('#475569');
+    expect(resolveYarnColor('light gray')).toBe('#CBD5E1');
+    expect(resolveYarnColor('soft mint yarn')).toBe('#34D399');
+    expect(resolveYarnColor('unknown-color-xyz', '#123456')).toBe('#123456');
+  });
+
+  it('memoizes syntax-highlighted lines, renders diagnostic squiggles, and keeps topological graph fingerprint stable across comment edits', () => {
+    // 1. Memoization cache hit returns identical ReactNode reference
+    const firstRender = highlightPatternLine('1. 6 sc in a magic ring (6) // comment', 0);
+    const cachedRender = highlightPatternLine('1. 6 sc in a magic ring (6) // comment', 5);
+    expect(cachedRender).toBe(firstRender);
+
+    // Diagnostic severity produces distinct cached node with squiggle wrapper
+    const errorRender = highlightPatternLine('1. 6 sc in a magic ring (8)', 0, 'error');
+    const warnRender = highlightPatternLine('1. 6 sc in a magic ring', 0, 'warning');
+    expect(errorRender).not.toBe(firstRender);
+    expect(warnRender).not.toBe(errorRender);
+
+    // Cover directives, color lines, bare foundation lines, and empty lines
+    expect(highlightPatternLine('', 0)).toBe('\u00A0');
+    expect(highlightPatternLine('# Full line comment', 0)).toBeTruthy();
+    expect(highlightPatternLine('@stuffed false // inline comment', 0)).toBeTruthy();
+    expect(highlightPatternLine('Colour: Emerald # inline hash comment', 0)).toBeTruthy();
+    expect(highlightPatternLine('chain 30', 0)).toBeTruthy();
+
+    // 2. Topological graph fingerprint stability across comment/whitespace edits
+    const baseText = `
+DomePiece [mint]:
+1. 6 sc in a magic ring (6)
+2. 6 inc (12)
+`;
+    const withCommentsAndNotes = `
+# Added top comment
+DomePiece [mint]:
+1. 6 sc in a magic ring (6) // inline note
+Freeform reminder to add safety eyes!
+2. 6 inc (12)
+`;
+    const withChangedTopology = `
+DomePiece [mint]:
+1. 6 sc in a magic ring (6)
+2. (sc, inc) x 6 (18)
+`;
+    const cBase = compilePattern(baseText);
+    const cComments = compilePattern(withCommentsAndNotes);
+    const cTopology = compilePattern(withChangedTopology);
+
+    expect(computeGraphFingerprint(cBase, null)).toBe(computeGraphFingerprint(cComments, null));
+    expect(computeGraphFingerprint(cBase, null)).not.toBe(
+      computeGraphFingerprint(cTopology, null)
+    );
+    expect(computeGraphFingerprint(cBase, true)).not.toBe(
+      computeGraphFingerprint(cBase, false)
+    );
   });
 });
 

@@ -352,6 +352,23 @@ function seedRoundPiece(
       pos[sid * 3 + 1] = 0.05;
       pos[sid * 3 + 2] = 0.25;
     }
+  } else if (foundationChains.length > 0) {
+    // Circular or auto-inferred foundation chain ring (e.g. "chain 30", "1. 28 sc (28)", or "11. Make 12 sc in each leg for a total of 24 sc (24)"):
+    // seed the foundation chains around their own full 360-degree circle at Y = 0 so they never mix into Row 1's worked `sc` circle!
+    const fCirc = foundationChains.reduce(
+      (acc, id) => acc + STITCH_DIMENSIONS[stitches[id].kind].width,
+      0
+    );
+    const fRad = Math.max(0.55, fCirc / (2 * Math.PI));
+    const fn = foundationChains.length;
+    for (let k = 0; k < fn; k++) {
+      const cid = foundationChains[k];
+      const theta = (k / fn) * Math.PI * 2;
+      pos[cid * 3] = Math.cos(theta) * fRad;
+      pos[cid * 3 + 1] = 0;
+      pos[cid * 3 + 2] = Math.sin(theta) * fRad;
+    }
+    prevRadius = fRad;
   }
 
   const isFlatJoinedMotif =
@@ -367,7 +384,7 @@ function seedRoundPiece(
     for (let id = row.firstStitchId; id <= row.lastStitchId; id++) {
       const st = stitches[id];
       if (st.pieceId !== piece.id || st.kind === 'magic_ring') continue;
-      if (isOvalFoundation && foundationChains.includes(id)) continue;
+      if (foundationChains.includes(id)) continue;
       if (st.isTurningChain) {
         turningIds.push(id);
       } else {
@@ -414,7 +431,7 @@ function seedRoundPiece(
     let hyperbolicAmplitude = 0;
 
     const isFirstRoundAfterFoundationChain =
-      rIdx === 1 &&
+      rIdx <= 1 &&
       foundationChains.length > 0 &&
       ringIds.some((id) => foundationChains.includes(stitches[id].anchors[0]?.targetStitchId ?? -1));
 

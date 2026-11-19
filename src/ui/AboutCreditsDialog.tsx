@@ -25,7 +25,7 @@ export function AboutCreditsDialog({ dialogRef }: Props) {
 
       <div className="dialog-body" style={{ fontSize: '0.86rem' }}>
         <p style={{ marginBlockStart: 0 }}>
-          <strong>StitchLens</strong> (<code>v0.0.6</code>) is an open-source, 100% client-side 3D
+          <strong>StitchLens</strong> (<code>v0.0.7</code>) is an open-source, 100% client-side 3D
           crochet pattern visualizer, live scratchpad, and stitch-graph debugger. It compiles
           standard written crochet instructions (US, UK, and Spanish terms) into a topological
           stitch-attachment graph and relaxes it in 3D using Extended Position-Based Dynamics

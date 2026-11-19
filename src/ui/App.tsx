@@ -77,7 +77,7 @@ function detectDarkTheme(): boolean {
  * Prevents re-running 3D XPBD physics or rebuilding Three.js buffers when editing comments,
  * notes, or incomplete lines that don't alter the actual stitch graph!
  */
-function computeGraphFingerprint(
+export function computeGraphFingerprint(
   pattern: CompiledPattern,
   stuffingOverride: boolean | null
 ): string {
@@ -878,7 +878,7 @@ export function App() {
             />
           </svg>
           <h1>StitchLens</h1>
-          <span className="brand-badge">v0.0.6 &middot; 3D Crochet Visualizer</span>
+          <span className="brand-badge">v0.0.7 &middot; 3D Crochet Visualizer</span>
         </div>
 
         <div className="header-actions">
@@ -915,7 +915,7 @@ export function App() {
             rel="noopener noreferrer"
             className="btn btn-report-issue"
           >
-            ! Report Issue (v0.0.6)
+            ! Report Issue (v0.0.7)
           </a>
 
           <button
