@@ -9,6 +9,8 @@ export interface ExamplePattern {
   dialect: CrochetDialect;
   summary: string;
   whatToWatch: string;
+  sourceCredit?: string;
+  sourceUrl?: string;
   patternText: string;
 }
 
@@ -232,6 +234,8 @@ Row 9: ch 1, turn, 12 sc (12)`,
       'Mathematical hyperbolic plane popularized in fiber geometry: increasing every 2nd stitch forces circumference to grow exponentially into 3D waves.',
     whatToWatch:
       'Rotate the 3D viewport to see how constant over-increasing naturally buckles into organic negative-curvature coral ruffles.',
+    sourceCredit: 'Inspired by Dr. Daina Taimiņa (1997 Hyperbolic Crochet) & The Institute For Figuring',
+    sourceUrl: 'https://www.theiff.org/oexhibits/oe1e.html',
     patternText: `Coral Reef [coral]:
 @stuffed false
 Rnd 1: 6 sc in a magic ring (6)
@@ -272,7 +276,9 @@ Row 6: ch 1, turn, 10 sc (10)`,
       'Adapted from Jane Eayre Fryer\'s "The Mary Frances Knitting and Crocheting Book" (1918, Public Domain) featuring chain arches and picots.',
     whatToWatch:
       'Step through Rnd 3 to watch each ch-3 picot bud sit atop the lace shell arches.',
-    patternText: `# Source: Adapted from "The Mary Frances Knitting and Crocheting Book" (1918, Public Domain)
+    sourceCredit: 'Jane Eayre Fryer, "The Mary Frances Knitting and Crocheting Book" (1918) — Project Gutenberg',
+    sourceUrl: 'https://www.gutenberg.org/ebooks/25305',
+    patternText: `# Source: Adapted from "The Mary Frances Knitting and Crocheting Book" (1918, Public Domain, https://www.gutenberg.org/ebooks/25305)
 Vintage Medallion [ivory]:
 @stuffed false
 Foundation: ch 6, join with sl st to first ch to form a ring

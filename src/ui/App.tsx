@@ -16,6 +16,7 @@ import {
 } from '../renderer/CrochetViewport';
 import { decodeShareHash, encodeShareHash } from '../utils/shareCodec';
 import type { SimWorkerRequest, SimWorkerResponse } from '../workers/sim.worker';
+import { AboutCreditsDialog } from './AboutCreditsDialog';
 import { ExampleGalleryDialog } from './ExampleGalleryDialog';
 import { SyntaxGuideDialog } from './SyntaxGuideDialog';
 import { highlightPatternLine } from './syntaxHighlight';
@@ -102,6 +103,7 @@ export function App() {
 
   const galleryModal = useLightDismissDialog();
   const guideModal = useLightDismissDialog();
+  const aboutModal = useLightDismissDialog();
 
   const canvasHostRef = useRef<HTMLDivElement | null>(null);
   const editorPaneRef = useRef<HTMLElement | null>(null);
@@ -759,7 +761,7 @@ export function App() {
             />
           </svg>
           <h1>StitchLens</h1>
-          <span className="brand-badge">v0.0.2 &middot; 3D Crochet Visualizer</span>
+          <span className="brand-badge">v0.0.3 &middot; 3D Crochet Visualizer</span>
         </div>
 
         <div className="header-actions">
@@ -782,6 +784,10 @@ export function App() {
             Syntax Guide
           </button>
 
+          <button type="button" className="btn" onClick={aboutModal.openModal}>
+            About &amp; Credits
+          </button>
+
           <button type="button" className="btn" onClick={() => void handleShareLink()}>
             Share Link
           </button>
@@ -792,7 +798,7 @@ export function App() {
             rel="noopener noreferrer"
             className="btn btn-report-issue"
           >
-            ! Report Issue (v0.0.2)
+            ! Report Issue (v0.0.3)
           </a>
 
           <button
@@ -1655,6 +1661,8 @@ export function App() {
       />
 
       <SyntaxGuideDialog dialogRef={guideModal.dialogRef} />
+
+      <AboutCreditsDialog dialogRef={aboutModal.dialogRef} />
     </div>
   );
 }

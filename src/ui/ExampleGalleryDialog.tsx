@@ -96,6 +96,29 @@ export function ExampleGalleryDialog({
                   >
                     <strong>Tip:</strong> {ex.whatToWatch}
                   </p>
+                  {ex.sourceCredit && (
+                    <p
+                      style={{
+                        fontSize: '0.73rem',
+                        marginBlock: '0.35rem 0',
+                        color: 'var(--text-secondary)',
+                      }}
+                    >
+                      <strong>Source:</strong>{' '}
+                      {ex.sourceUrl ? (
+                        <a
+                          href={ex.sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'var(--brand-mint)' }}
+                        >
+                          {ex.sourceCredit}
+                        </a>
+                      ) : (
+                        ex.sourceCredit
+                      )}
+                    </p>
+                  )}
                 </div>
 
                 <button

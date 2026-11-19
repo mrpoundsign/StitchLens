@@ -42,18 +42,19 @@
             />
           </svg>
           <h1>StitchLens</h1>
-          <span class="brand-badge">v0.0.2</span>
+          <span class="brand-badge">v0.0.3</span>
         </div>
 
         <div class="header-actions">
           <a href="./app/" class="btn btn-primary">Open App &rarr;</a>
+          <a href="#about-credits" class="btn">About &amp; Credits</a>
           <a
             href="https://github.com/mrpoundsign/StitchLens/issues"
             target="_blank"
             rel="noopener noreferrer"
             class="btn btn-report-issue"
           >
-            ! Report Issue (v0.0.2)
+            ! Report Issue (v0.0.3)
           </a>
           <button type="button" id="theme-toggle-btn" class="btn">Toggle Theme</button>
         </div>
@@ -261,7 +262,18 @@
                 <h3>Hyperbolic Crochet Coral Ruffle</h3>
                 <p style="font-size: 0.82rem; color: var(--text-secondary); margin-block: 0.4rem">
                   Increasing every 2nd stitch forces circumference to grow exponentially into
-                  symmetric 3D hyperbolic saddle waves.
+                  symmetric 3D hyperbolic saddle waves. Inspired by
+                  <a
+                    href="https://pi.math.cornell.edu/~dtaimina/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >Dr. Daina Taimi&#326;a</a>
+                  &amp;
+                  <a
+                    href="https://www.theiff.org/oexhibits/oe1e.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >The Institute For Figuring</a>.
                 </p>
               </div>
               <a href="./app/?example=hyperbolic_coral" class="btn btn-primary">Open in App &rarr;</a>
@@ -292,11 +304,108 @@
                 </div>
                 <h3>1918 Vintage Picot Star Medallion</h3>
                 <p style="font-size: 0.82rem; color: var(--text-secondary); margin-block: 0.4rem">
-                  Adapted from Jane Eayre Fryer's "The Mary Frances Knitting and Crocheting Book"
-                  (1918, Public Domain) featuring chain arches and picots.
+                  Adapted from Jane Eayre Fryer's
+                  <a
+                    href="https://www.gutenberg.org/ebooks/25305"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  ><em>The Mary Frances Knitting and Crocheting Book</em> (1918, Project Gutenberg #25305)</a>
+                  featuring chain arches and picots.
                 </p>
               </div>
               <a href="./app/?example=vintage_medallion_1918" class="btn btn-primary">Open in App &rarr;</a>
+            </article>
+          </div>
+        </section>
+
+        <section id="about-credits" class="landing-gallery" style="margin-block-start: 2.5rem">
+          <div class="gallery-section-header">
+            <h2>About StitchLens, Credits &amp; Sources</h2>
+            <p>
+              StitchLens is free, open-source software (<a
+                href="https://github.com/mrpoundsign/StitchLens/blob/main/LICENSE"
+                target="_blank"
+                rel="noopener noreferrer"
+              >AGPL-3.0</a>) built on standard fiber arts notation, historical public-domain
+              crochet literature, and computational textile physics research.
+            </p>
+          </div>
+
+          <div class="landing-features">
+            <article class="feature-card">
+              <h3>Crochet Standards &amp; Terminology</h3>
+              <p>
+                US, UK, and Spanish stitch abbreviations and row/round conventions follow the
+                <a
+                  href="https://www.craftyarncouncil.com/standards/crochet-abbreviations"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >Craft Yarn Council (CYC) Master Crochet Abbreviations</a>.
+              </p>
+            </article>
+
+            <article class="feature-card">
+              <h3>Historical &amp; Mathematical Pattern Sources</h3>
+              <p>
+                Includes adaptations from Jane Eayre Fryer&rsquo;s
+                <a
+                  href="https://www.gutenberg.org/ebooks/25305"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                ><em>The Mary Frances Knitting and Crocheting Book</em> (1918, Project Gutenberg #25305)</a>
+                and hyperbolic crochet planes inspired by
+                <a
+                  href="https://pi.math.cornell.edu/~dtaimina/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >Dr. Daina Taimi&#326;a (1997)</a> &amp;
+                <a
+                  href="https://www.theiff.org/oexhibits/oe1e.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >The Institute For Figuring</a>.
+              </p>
+            </article>
+
+            <article class="feature-card">
+              <h3>3D Crochet Topology &amp; Physics Research</h3>
+              <p>
+                Topological stitch-graph compilation and 3D relaxation draw inspiration from
+                <a
+                  href="https://edryer.github.io/crochetparade/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >CrochetPARADE</a> (<a
+                  href="https://arxiv.org/abs/2402.18604"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >arXiv:2402.18604</a>),
+                <a
+                  href="https://textiles-lab.github.io/publications/2023-amigurumi/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >CMU Textiles Lab / MIT CSAIL computational amigurumi research</a>, and
+                <a
+                  href="https://matthias-research.github.io/pages/publications/XPBD.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >Macklin et al. (2016) XPBD</a>.
+              </p>
+            </article>
+
+            <article class="feature-card">
+              <h3>Open-Source Software &amp; Libraries</h3>
+              <p>
+                Source code is hosted on
+                <a
+                  href="https://github.com/mrpoundsign/StitchLens"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >GitHub (mrpoundsign/StitchLens)</a> under AGPL-3.0, powered by
+                <a href="https://threejs.org/" target="_blank" rel="noopener noreferrer">Three.js</a>,
+                <a href="https://react.dev/" target="_blank" rel="noopener noreferrer">React</a>,
+                and <a href="https://vite.dev/" target="_blank" rel="noopener noreferrer">Vite</a>.
+              </p>
             </article>
           </div>
         </section>
@@ -304,7 +413,7 @@
 
       <footer class="landing-footer">
         <span>
-          <strong>StitchLens v0.0.2</strong> &middot; Licensed under
+          <strong>StitchLens v0.0.3</strong> &middot; Licensed under
           <a
             href="https://github.com/mrpoundsign/StitchLens/blob/main/LICENSE"
             target="_blank"
@@ -316,10 +425,15 @@
             href="https://github.com/mrpoundsign/StitchLens"
             target="_blank"
             rel="noopener noreferrer"
-          >Source Code</a>) &middot; Bundled starter patterns: <code>CC0-1.0</code> / Public Domain
+          >Source Code</a>) &middot; Bundled starter patterns:
+          <a
+            href="https://creativecommons.org/publicdomain/zero/1.0/"
+            target="_blank"
+            rel="noopener noreferrer"
+          ><code>CC0-1.0</code></a> / Public Domain
         </span>
         <span>
-          Found a bug or pattern quirk? Mention <strong>v0.0.2</strong> on the
+          Found a bug or pattern quirk? Mention <strong>v0.0.3</strong> on the
           <a
             href="https://github.com/mrpoundsign/StitchLens/issues"
             target="_blank"
