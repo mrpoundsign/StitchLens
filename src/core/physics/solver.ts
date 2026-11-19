@@ -485,6 +485,7 @@ function seedRoundPiece(
           (id, idx) =>
             idx >= n / 2 && stitches[id].anchors[0]?.targetStitchId === rightEndChainId
         );
+        const isRoundedRightEnd = openingRightTipIds.length + closingRightTipIds.length >= 3;
 
         for (let k = 0; k < n; k++) {
           const id = ringIds[k];
@@ -505,7 +506,7 @@ function seedRoundPiece(
                 : Math.PI * 0.55 + (idxInTip / (countInTip - 1)) * (Math.PI * 0.9);
             x = cx + Math.cos(angle) * targetRadius;
             z = Math.sin(angle) * targetRadius;
-          } else if (ancId === rightEndChainId) {
+          } else if (ancId === rightEndChainId && isRoundedRightEnd) {
             const openIdx = openingRightTipIds.indexOf(id);
             if (openIdx >= 0) {
               // Opening stitches fan counterclockwise across the top-right quadrant (+0.08*pi -> +0.44*pi) into the +Z top edge!
@@ -528,7 +529,7 @@ function seedRoundPiece(
               z = Math.sin(angle) * targetRadius;
             }
           } else {
-            // Straight middle spine chain: +Z on initial top pass, -Z on opposite underside pass!
+            // Straight spine chain (or open U-turn base on a 1-row blade/strap): +Z on initial top pass, -Z on opposite underside pass!
             const signZ = anc?.site === 'chain_underside' ? -1 : 1;
             x = cx;
             z = signZ * targetRadius;
@@ -850,10 +851,14 @@ function buildDistanceConstraints(pattern: CompiledPattern): DistanceConstraint[
     }
   }
 
-  // 3. Round perimeter closure edge: in spiral/joined rounds, the last stitch of a round sits
+  // 3. Round perimeter closure edge: in multi-round spiral/joined rounds, the last stitch of a round sits
   // immediately adjacent to the first stitch of that round (so the final round doesn't splay open at the seam)!
+  // Skip 1-row open-base U-turn pieces (like a 1-row blade/strap) where stitch 0 is on the +Z top base and
+  // the last stitch is on the -Z bottom base!
   for (const row of pattern.rows) {
     if (row.workMode === 'flat_rows') continue;
+    const pieceRowCount = pattern.rows.filter((r) => r.pieceId === row.pieceId).length;
+    if (pieceRowCount <= 1) continue;
     const ringIds: number[] = [];
     for (let id = row.firstStitchId; id <= row.lastStitchId; id++) {
       const st = stitches[id];

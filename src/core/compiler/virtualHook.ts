@@ -188,10 +188,17 @@ class PieceCompiler {
     );
   }
 
-  private hasTurnOrBorder(stmts: StatementNode[]): boolean {
+  private hasLeadingTurnOrBorder(stmts: StatementNode[]): boolean {
+    let sawAnchoredStitch = false;
     for (const s of stmts) {
-      if (s.type === 'turn_op' || s.type === 'border_op') return true;
-      if (s.type === 'repeat_op' && this.hasTurnOrBorder(s.body)) return true;
+      if (s.type === 'border_op') return true;
+      if (s.type === 'turn_op') return !sawAnchoredStitch;
+      if (s.type === 'stitch_op' && s.stitch !== 'ch' && s.stitch !== 'magic_ring') {
+        sawAnchoredStitch = true;
+      }
+      if (s.type === 'repeat_op') {
+        sawAnchoredStitch = true;
+      }
     }
     return false;
   }
@@ -315,7 +322,7 @@ class PieceCompiler {
       if (!startsWithFoundation) {
         const needed = Math.max(2, this.estimateParentsNeeded(rowAst.statements));
         const synthSpan: SourceSpan = { line: rowAst.sourceLine, colStart: 1, colEnd: 1 };
-        const hasTurn = this.hasTurnOrBorder(rowAst.statements);
+        const hasTurn = this.hasLeadingTurnOrBorder(rowAst.statements);
         const isFlatPiece = hasTurn || this.pieceUsesFlatTurnsOrRows();
         this.workMode = isFlatPiece ? 'flat_rows' : 'spiral_rounds';
         if (!isFlatPiece) {
@@ -357,7 +364,7 @@ class PieceCompiler {
       rIdx > 0 &&
       this.workMode === 'flat_rows' &&
       this.hasWorkedInCurrentFlatPass &&
-      !this.hasTurnOrBorder(rowAst.statements)
+      !this.hasLeadingTurnOrBorder(rowAst.statements)
     ) {
       implicitTurnTriggered = true;
       const headerSpan: SourceSpan = { line: rowAst.sourceLine, colStart: 1, colEnd: 4 };
@@ -756,9 +763,12 @@ class PieceCompiler {
       const isPicotChain =
         nextSibling?.type === 'stitch_op' && nextSibling.target.kind === 'picot_base';
 
-      // Is this a turning chain? (e.g. "Chain, turn" or "ch 1" at very start of a non-foundation row)
+      // Is this a turning chain? (e.g. "Chain, turn", "15 sc, ch, turn", or "ch 1" at very start of a non-foundation row)
       const followedByTurn =
-        siblingStmts.slice(stmtIdx + 1).some((s) => s.type === 'turn_op') && !state.hasAnchoredInRow;
+        !inRepeatGroup &&
+        (nextSibling?.type === 'turn_op' ||
+          (siblingStmts.slice(stmtIdx + 1).some((s) => s.type === 'turn_op') &&
+            !state.hasAnchoredInRow));
       const isStartOfRowTurning =
         !inRepeatGroup &&
         !isInitialFoundation &&
@@ -988,11 +998,19 @@ class PieceCompiler {
         for (const id of emittedIds) {
           this.spiralQueue.push({ stitchId: id, site: 'both_loops' });
         }
-      } else if (!sharedAnchorOverride) {
-        this.replaceFlatParentsWithChildren(0, emittedIds);
       } else {
-        // Inside a shared-target repeat group (like V-stitch)
-        this.replaceFlatParentsWithChildren(0, emittedIds);
+        // `resolveSharedTargetAnchor` already consumed the 1 parent slot and advanced `flatCursor` by `flatDir`
+        // (e.g. `flatCursor = -1` when reaching the left end chain), so splice `emittedIds` in without resetting `flatCursor = 0`!
+        const insertAt =
+          this.flatDir === 1 ? Math.max(0, this.flatCursor) : Math.max(0, this.flatCursor + 1);
+        const newSlots: FlatBoundarySlot[] = (
+          this.flatDir === 1 ? emittedIds : [...emittedIds].reverse()
+        ).map((id) => ({ stitchId: id, defaultSite: 'both_loops' }));
+        this.flatBoundary.splice(insertAt, 0, ...newSlots);
+        if (this.flatDir === 1) {
+          this.flatCursor += newSlots.length;
+        }
+        this.hasWorkedInCurrentFlatPass = true;
       }
       return;
     }

@@ -878,7 +878,7 @@ export function App() {
             />
           </svg>
           <h1>StitchLens</h1>
-          <span className="brand-badge">v0.0.5 &middot; 3D Crochet Visualizer</span>
+          <span className="brand-badge">v0.0.6 &middot; 3D Crochet Visualizer</span>
         </div>
 
         <div className="header-actions">
@@ -915,7 +915,7 @@ export function App() {
             rel="noopener noreferrer"
             className="btn btn-report-issue"
           >
-            ! Report Issue (v0.0.5)
+            ! Report Issue (v0.0.6)
           </a>
 
           <button

@@ -403,6 +403,31 @@ Colour: Tan
       pouchMinX = Math.min(pouchMinX, geom.positions[id * 3]);
     }
     expect(pouchMinX).toBeGreaterThan(hoodMaxX + 2);
+
+    // Every "ch" at the end of Rows 10 and 11 ("12 sc, ch, turn") must be marked `isTurningChain = true`,
+    // and Row 11 and Row 12 must have exactly 12 non-turning stitches stacked directly over the 12 flap stitches (zero stray cross-cap stitches)!
+    const flapTurningChains = compiled.stitches.filter(
+      (s) => s.pieceId === hoodPiece.id && s.rowNumber >= 10 && s.kind === 'ch'
+    );
+    expect(flapTurningChains.length).toBe(2);
+    expect(flapTurningChains.every((s) => s.isTurningChain)).toBe(true);
+
+    for (const rNum of [10, 11, 12]) {
+      const rowStitches = compiled.stitches.filter(
+        (s) => s.pieceId === hoodPiece.id && s.rowNumber === rNum && !s.isTurningChain
+      );
+      expect(rowStitches.length).toBe(12);
+      for (let i = 0; i < rowStitches.length - 1; i++) {
+        const a = rowStitches[i].id;
+        const b = rowStitches[i + 1].id;
+        const stepDist = Math.hypot(
+          geom.positions[b * 3] - geom.positions[a * 3],
+          geom.positions[b * 3 + 1] - geom.positions[a * 3 + 1],
+          geom.positions[b * 3 + 2] - geom.positions[a * 3 + 2]
+        );
+        expect(stepDist).toBeLessThan(1.65);
+      }
+    }
   });
 
   it('transcribes pattern text between US, UK, and ES dialects while preserving comments, notes, and identical 3D stitch counts', () => {
@@ -506,11 +531,35 @@ Oval Strap:
     expect(c3.diagnostics).toEqual([]);
     const strap = c3.pieces.find((p) => p.name === 'Oval Strap')!;
     expect(strap).toBeDefined();
-    // Oval Strap must auto-pivot onto `chain_underside` along the 8 remaining underside chains (and wrap the right tip) so it forms a straight 2-sided oval!
+    // Oval Strap ("1. Ch 11, 9 sc in the second chain from the hook, 4 sc in the same stitch, 9 sc (22)"):
+    // - 10 usable foundation chains (9 top/bottom spine chains + 1 tip chain)
+    // - 9 sc along top of chains 1..9 (`both_loops`)
+    // - 4 sc fanned into tip chain 0 (`both_loops`)
+    // - 9 sc auto-pivoted along `chain_underside` of chains 1..9 (NOT 8!)
+    // - 0 worked stitches anchored into other worked `sc` stitches (every `sc` anchors directly into a foundation `ch`)!
     const strapUndersideStitches = strap.stitchIds.filter((id) =>
       c3.stitches[id].anchors.some((a) => a.site === 'chain_underside')
     );
-    expect(strapUndersideStitches.length).toBe(8);
+    expect(strapUndersideStitches.length).toBe(9);
+
+    const g3 = solveStitchGeometry(c3);
+    const strapWorked = strap.stitchIds.filter(
+      (id) => c3.stitches[id].kind !== 'ch' && !c3.stitches[id].isTurningChain
+    );
+    expect(strapWorked.length).toBe(22);
+    for (const sid of strapWorked) {
+      const targetId = c3.stitches[sid].anchors[0]?.targetStitchId;
+      expect(targetId).toBeDefined();
+      expect(c3.stitches[targetId!].kind).toBe('ch');
+    }
+
+    const firstStId = strapWorked[0];
+    const lastStId = strapWorked[strapWorked.length - 1];
+    // First stitch (+Z top edge at base) and last stitch (-Z bottom edge at base) must sit on opposite Z sides of the spine
+    // and at nearly identical X coordinate (aligned base)!
+    expect(g3.positions[firstStId * 3 + 2]).toBeGreaterThan(0.3);
+    expect(g3.positions[lastStId * 3 + 2]).toBeLessThan(-0.3);
+    expect(Math.abs(g3.positions[firstStId * 3] - g3.positions[lastStId * 3])).toBeLessThan(0.45);
   });
 
   it('solves synthetic oval-sole boot with asymmetric toe decreases into a uniform, uncrossed cylindrical ankle tube', () => {
