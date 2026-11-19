@@ -489,6 +489,29 @@ R2-R8 1sc in each (30)
     expect(c2.diagnostics).toEqual([]);
     expect(c2.rows.length).toBe(8);
     expect(c2.rows.every((r) => r.emittedStitchCount === 30)).toBe(true);
+
+    // Also verify oval Sword Blade and linear Belt when they appear as later pieces in a multi-piece pattern!
+    const multiPieceOvalTest = `
+Sword Hilt:
+1. 6 sc in a magic ring (6)
+2-4. 6 sc (6)
+
+Belt:
+@stuffed false
+1. Ch 29, 28 sc starting in 2nd chain from hook (28)
+
+Sword Blade:
+1. Ch 13, 11 sc in the second chain from the hook, 4 sc in the same stitch, 11 sc (26)
+`;
+    const c3 = compilePattern(multiPieceOvalTest);
+    expect(c3.diagnostics).toEqual([]);
+    const blade = c3.pieces.find((p) => p.name === 'Sword Blade')!;
+    expect(blade).toBeDefined();
+    // Sword Blade must auto-pivot onto `chain_underside` along the 10 remaining underside chains (and wrap the right tip) so it forms a straight 2-sided blade!
+    const bladeUndersideStitches = blade.stitchIds.filter((id) =>
+      c3.stitches[id].anchors.some((a) => a.site === 'chain_underside')
+    );
+    expect(bladeUndersideStitches.length).toBe(10);
   });
 });
 

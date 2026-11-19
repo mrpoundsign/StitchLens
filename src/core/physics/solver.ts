@@ -400,10 +400,15 @@ function seedRoundPiece(
     let deltaY = 0;
     let hyperbolicAmplitude = 0;
 
-    if (rIdx === 0 || (rIdx === 1 && pieceRows[0].emittedStitchCount === 0)) {
-      // First real round around Magic Ring or Oval spine
+    const isFirstRoundAfterFoundationChain =
+      rIdx === 1 &&
+      foundationChains.length > 0 &&
+      ringIds.some((id) => foundationChains.includes(stitches[id].anchors[0]?.targetStitchId ?? -1));
+
+    if (rIdx === 0 || (rIdx === 1 && pieceRows[0].emittedStitchCount === 0) || isFirstRoundAfterFoundationChain) {
+      // First real round around Magic Ring, Oval spine, or circular foundation chain
       targetRadius = Math.max(0.55, rawTargetRadius);
-      deltaY = isFlatJoinedMotif ? 0 : 0.08;
+      deltaY = isFirstRoundAfterFoundationChain && !isOvalFoundation ? avgHeight * 0.92 : isFlatJoinedMotif ? 0 : 0.08;
     } else if (isFlatJoinedMotif) {
       // Flat lace medallion / granny square motif: radiates outward in the XZ plane!
       targetRadius = prevRadius + avgHeight * 0.92;

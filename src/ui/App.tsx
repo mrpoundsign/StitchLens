@@ -75,6 +75,7 @@ function detectDarkTheme(): boolean {
 export function App() {
   const [activeExampleId, setActiveExampleId] = useState<string>('custom');
   const [patternText, setPatternText] = useState<string>(loadInitialPatternFromStorage);
+  const [debouncedPatternText, setDebouncedPatternText] = useState<string>(patternText);
   const [dialect, setDialect] = useState<CrochetDialect>(loadInitialDialectFromStorage);
 
   const [viewMode, setViewMode] = useState<RenderViewMode>('yarn');
@@ -160,13 +161,17 @@ export function App() {
     }
   }, []);
 
-  // Persist current sketch & dialect in localStorage so reloading resumes right where you left off
+  // Debounce pattern compilation & localStorage writes so rapid typing in large patterns stays 60fps instant
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_PATTERN, patternText);
-    } catch {
-      // Ignore storage block
-    }
+    const timer = window.setTimeout(() => {
+      setDebouncedPatternText(patternText);
+      try {
+        localStorage.setItem(STORAGE_KEY_PATTERN, patternText);
+      } catch {
+        // Ignore storage block
+      }
+    }, 120);
+    return () => window.clearTimeout(timer);
   }, [patternText]);
 
   useEffect(() => {
@@ -185,10 +190,10 @@ export function App() {
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
-  // Compile pattern synchronously on edit (sub-millisecond!)
+  // Compile pattern on debounced edit so typing never blocks the main thread
   const compiled: CompiledPattern = useMemo(
-    () => compilePattern(patternText, { dialect }),
-    [patternText, dialect]
+    () => compilePattern(debouncedPatternText, { dialect }),
+    [debouncedPatternText, dialect]
   );
 
   const onStitchClickRef = useRef<(clickedStitchId: number) => void>(() => {});
@@ -302,9 +307,14 @@ export function App() {
   }, []);
 
   // Initialize Web Worker for 3D XPBD physics relaxation (with main-thread fallback)
-  const [geometry, setGeometry] = useState<SolvedGeometry>(() =>
-    solveStitchGeometry(compiled, { iterations: 28, stuffingOverride })
-  );
+  const [solvedState, setSolvedState] = useState<{
+    pattern: CompiledPattern;
+    geometry: SolvedGeometry;
+  }>(() => ({
+    pattern: compiled,
+    geometry: solveStitchGeometry(compiled, { iterations: 28, stuffingOverride }),
+  }));
+  const pendingCompiledRef = useRef<CompiledPattern>(compiled);
 
   useEffect(() => {
     try {
@@ -314,7 +324,10 @@ export function App() {
       workerRef.current = worker;
       worker.onmessage = (e: MessageEvent<SimWorkerResponse>) => {
         if (e.data.requestId === reqCounterRef.current) {
-          setGeometry(e.data.geometry);
+          setSolvedState({
+            pattern: pendingCompiledRef.current,
+            geometry: e.data.geometry,
+          });
         }
       };
       return () => {
@@ -329,6 +342,7 @@ export function App() {
   // Re-solve 3D geometry whenever compiled graph or stuffing setting changes
   useEffect(() => {
     const reqId = ++reqCounterRef.current;
+    pendingCompiledRef.current = compiled;
     if (workerRef.current) {
       const payload: SimWorkerRequest = {
         requestId: reqId,
@@ -337,24 +351,28 @@ export function App() {
       };
       workerRef.current.postMessage(payload);
     } else {
-      setGeometry(solveStitchGeometry(compiled, { iterations: 28, stuffingOverride }));
+      setSolvedState({
+        pattern: compiled,
+        geometry: solveStitchGeometry(compiled, { iterations: 28, stuffingOverride }),
+      });
     }
   }, [compiled, stuffingOverride]);
 
   const prevStitchCountRef = useRef<number>(compiled.stitches.length);
 
-  // Push new pattern + geometry into Three.js Viewport
+  // Push new pattern + geometry into Three.js Viewport only once per solved frame
   useEffect(() => {
     const vp = viewportRef.current;
-    if (!vp || geometry.positions.length !== compiled.stitches.length * 3) return;
+    const { pattern: solvedPattern, geometry: solvedGeometry } = solvedState;
+    if (!vp || solvedGeometry.positions.length !== solvedPattern.stitches.length * 3) return;
     const transitionedFromEmpty =
-      prevStitchCountRef.current === 0 && compiled.stitches.length > 0;
-    prevStitchCountRef.current = compiled.stitches.length;
+      prevStitchCountRef.current === 0 && solvedPattern.stitches.length > 0;
+    prevStitchCountRef.current = solvedPattern.stitches.length;
     const shouldFit = needsCameraFitRef.current || transitionedFromEmpty;
     needsCameraFitRef.current = false;
     vp.setData(
-      compiled,
-      geometry,
+      solvedPattern,
+      solvedGeometry,
       {
         viewMode,
         colorMode,
@@ -367,7 +385,7 @@ export function App() {
       },
       shouldFit
     );
-  }, [compiled, geometry]);
+  }, [solvedState]);
 
   // Push lightweight scrubber/toggle updates into Three.js Viewport
   useEffect(() => {
@@ -1017,6 +1035,7 @@ export function App() {
                   autoCorrect="off"
                   value={patternText}
                   onMouseMove={(e) => {
+                    if (compiled.diagnostics.length === 0) return;
                     const ta = textareaRef.current;
                     const stackEl = ta?.closest('.editor-highlight-stack');
                     if (!ta || !stackEl) return;

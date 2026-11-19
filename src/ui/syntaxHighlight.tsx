@@ -40,14 +40,36 @@ function renderHighlightedClause(text: string, keyPrefix: string): ReactNode[] {
   return nodes;
 }
 
+const HIGHLIGHT_CACHE_LIMIT = 2000;
+const highlightLineCache = new Map<string, ReactNode>();
+
 export function highlightPatternLine(
   rawLine: string,
-  lineIndex: number,
+  _lineIndex?: number,
   diagnosticSeverity?: 'error' | 'warning' | 'info'
 ): ReactNode {
   if (rawLine.length === 0) {
     return '\u00A0';
   }
+
+  const cacheKey = diagnosticSeverity ? `${diagnosticSeverity}\0${rawLine}` : rawLine;
+  const cached = highlightLineCache.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const rendered = computeHighlightedLine(rawLine, diagnosticSeverity);
+  if (highlightLineCache.size >= HIGHLIGHT_CACHE_LIMIT) {
+    highlightLineCache.clear();
+  }
+  highlightLineCache.set(cacheKey, rendered);
+  return rendered;
+}
+
+function computeHighlightedLine(
+  rawLine: string,
+  diagnosticSeverity?: 'error' | 'warning' | 'info'
+): ReactNode {
 
   // Separate trailing inline comment (" // ..." or " # ..." not hex)
   let mainPart = rawLine;
@@ -115,7 +137,7 @@ export function highlightPatternLine(
       return (
         <>
           <span className="syn-modifier">{prefix}</span>
-          {renderHighlightedClause(rest, `L${lineIndex}`)}
+          {renderHighlightedClause(rest, 'c')}
           {trailingComment && <span className="syn-comment">{trailingComment}</span>}
         </>
       );
@@ -144,10 +166,10 @@ export function highlightPatternLine(
         <span className="syn-row-num">{headerPart}</span>
         {diagnosticSeverity && !countSuffix ? (
           <span className={`syn-squiggle syn-squiggle-${diagnosticSeverity}`}>
-            {renderHighlightedClause(bodyPart, `L${lineIndex}`)}
+            {renderHighlightedClause(bodyPart, 'r')}
           </span>
         ) : (
-          renderHighlightedClause(bodyPart, `L${lineIndex}`)
+          renderHighlightedClause(bodyPart, 'r')
         )}
         {countSuffix && (
           <span
@@ -171,7 +193,7 @@ export function highlightPatternLine(
   ) {
     return (
       <>
-        {renderHighlightedClause(mainPart, `L${lineIndex}`)}
+        {renderHighlightedClause(mainPart, 'f')}
         {trailingComment && <span className="syn-comment">{trailingComment}</span>}
       </>
     );

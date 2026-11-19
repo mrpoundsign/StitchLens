@@ -914,11 +914,12 @@ class PieceCompiler {
 
     // Case D: "in Nth ch from hook" offset adjustment on foundation chain!
     if (stmt.target.kind === 'from_hook') {
+      const pieceRowCount = this.rows.filter((r) => r.pieceId === this.piece.id).length;
       if (
         (this.workMode === 'spiral_rounds' || this.workMode === 'joined_rounds') &&
         this.foundationIds.length > 0 &&
         this.spiralQueue.length === this.foundationIds.length &&
-        this.rows.length <= 1
+        pieceRowCount <= 1
       ) {
         // Started on a chain without turns, but works "in 2nd ch from hook" (linear/oval chain start, not a circular ring!)
         this.workMode = 'flat_rows';
