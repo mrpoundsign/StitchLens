@@ -109,6 +109,7 @@ export function App() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const highlightBackdropRef = useRef<HTMLPreElement | null>(null);
   const lineGutterRef = useRef<HTMLDivElement | null>(null);
+  const editorScrollViewportRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const sliderRef = useRef<HTMLInputElement | null>(null);
   const workerRef = useRef<Worker | null>(null);
@@ -602,6 +603,7 @@ export function App() {
 
   const jumpEditorToLine = (lineNum: number) => {
     const ta = textareaRef.current;
+    const scrollEl = editorScrollViewportRef.current;
     if (!ta) return;
     const lines = patternText.split('\n');
     let offset = 0;
@@ -612,10 +614,11 @@ export function App() {
     ta.focus();
     ta.setSelectionRange(offset, offset + lineLen);
 
-    const lineHeightPx = parseFloat(window.getComputedStyle(ta).lineHeight) || 21.3;
-    const targetTop = Math.max(0, (lineNum - 1) * lineHeightPx - ta.clientHeight * 0.32);
-    ta.scrollTop = targetTop;
-    syncEditorScroll();
+    if (scrollEl) {
+      const lineHeightPx = 22;
+      const targetTop = Math.max(0, (lineNum - 1) * lineHeightPx - scrollEl.clientHeight * 0.32);
+      scrollEl.scrollTop = targetTop;
+    }
   };
 
   const sliderAriaText = activeStitch
@@ -697,20 +700,6 @@ export function App() {
     showToast(`Updated Line ${lineNum} stitch count to (${expectedCount})!`);
   };
 
-  const syncEditorScroll = () => {
-    const ta = textareaRef.current;
-    const pre = highlightBackdropRef.current;
-    const gutter = lineGutterRef.current;
-    if (!ta) return;
-    if (pre) {
-      pre.scrollTop = ta.scrollTop;
-      pre.scrollLeft = ta.scrollLeft;
-    }
-    if (gutter) {
-      gutter.scrollTop = ta.scrollTop;
-    }
-  };
-
   const startColResize = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     const startX = e.clientX;
@@ -770,7 +759,7 @@ export function App() {
             />
           </svg>
           <h1>StitchLens</h1>
-          <span className="brand-badge">v0.0.1 &middot; 3D Crochet Visualizer</span>
+          <span className="brand-badge">v0.0.2 &middot; 3D Crochet Visualizer</span>
         </div>
 
         <div className="header-actions">
@@ -803,7 +792,7 @@ export function App() {
             rel="noopener noreferrer"
             className="btn btn-report-issue"
           >
-            ! Report Issue (v0.0.1)
+            ! Report Issue (v0.0.2)
           </a>
 
           <button
@@ -906,123 +895,123 @@ export function App() {
             onMouseLeave={scheduleCloseDiagHover}
           >
             <div
-              ref={lineGutterRef}
-              className="pattern-line-gutter"
-              aria-hidden="true"
+              ref={editorScrollViewportRef}
+              className="editor-scroll-viewport"
+              onScroll={() => setHoveredDiagLine(null)}
             >
-              {highlightedLines.map((_, idx) => {
-                const lineNum = idx + 1;
-                const sev = lineSeverityMap.get(lineNum);
-                const diags = lineDiagnosticsMap.get(lineNum);
-                return (
-                  <span
-                    key={lineNum}
-                    className={`gutter-line-num ${sev ? `gutter-line-diag-${sev} gutter-line-has-diag` : ''}`}
-                    title={diags ? diags.map((d) => d.message).join('\n') : undefined}
-                    onMouseEnter={(e) => {
-                      if (!diags) return;
-                      const stackRect = e.currentTarget
-                        .closest('.editor-highlight-stack')
-                        ?.getBoundingClientRect();
-                      const rowRect = e.currentTarget.getBoundingClientRect();
-                      const topPx = stackRect ? rowRect.bottom - stackRect.top + 2 : 28;
-                      openDiagHover(lineNum, topPx);
-                    }}
-                    onClick={() => {
-                      if (diags) {
-                        jumpEditorToLine(lineNum);
-                      }
-                    }}
-                  >
-                    {sev && (
-                      <span
-                        className={`gutter-diag-marker gutter-diag-marker-${sev}`}
-                        aria-hidden="true"
+              <div
+                ref={lineGutterRef}
+                className="pattern-line-gutter"
+                aria-hidden="true"
+              >
+                {highlightedLines.map((_, idx) => {
+                  const lineNum = idx + 1;
+                  const sev = lineSeverityMap.get(lineNum);
+                  const diags = lineDiagnosticsMap.get(lineNum);
+                  return (
+                    <span
+                      key={lineNum}
+                      className={`gutter-line-num ${sev ? `gutter-line-diag-${sev} gutter-line-has-diag` : ''}`}
+                      title={diags ? diags.map((d) => d.message).join('\n') : undefined}
+                      onMouseEnter={(e) => {
+                        if (!diags) return;
+                        const stackRect = e.currentTarget
+                          .closest('.editor-highlight-stack')
+                          ?.getBoundingClientRect();
+                        const rowRect = e.currentTarget.getBoundingClientRect();
+                        const topPx = stackRect ? rowRect.bottom - stackRect.top + 2 : 28;
+                        openDiagHover(lineNum, topPx);
+                      }}
+                      onClick={() => {
+                        if (diags) {
+                          jumpEditorToLine(lineNum);
+                        }
+                      }}
+                    >
+                      {sev && (
+                        <span
+                          className={`gutter-diag-marker gutter-diag-marker-${sev}`}
+                          aria-hidden="true"
+                        >
+                          {sev === 'error' ? '!' : sev === 'warning' ? '?' : 'i'}
+                        </span>
+                      )}
+                      <span>{lineNum}</span>
+                    </span>
+                  );
+                })}
+              </div>
+              <div className="editor-code-grid">
+                <pre
+                  ref={highlightBackdropRef}
+                  className="pattern-highlight-backdrop"
+                  aria-hidden="true"
+                >
+                  {highlightedLines.map((node, idx) => {
+                    const sev = lineSeverityMap.get(idx + 1);
+                    return (
+                      <div
+                        key={idx}
+                        className={`backdrop-line ${sev ? `backdrop-line-diag-${sev}` : ''}`}
                       >
-                        {sev === 'error' ? '!' : sev === 'warning' ? '?' : 'i'}
-                      </span>
-                    )}
-                    <span>{lineNum}</span>
-                  </span>
-                );
-              })}
-              <span className="gutter-line-num" aria-hidden="true" />
-              <span className="gutter-line-num" aria-hidden="true" />
+                        {node}
+                      </div>
+                    );
+                  })}
+                </pre>
+                <textarea
+                  ref={textareaRef}
+                  className="pattern-textarea"
+                  aria-label="Crochet pattern instructions"
+                  placeholder={
+                    'Paste or type a crochet pattern here, drop a .txt file, or click "Examples (11 CC0)" above...\n\nExample:\nHead [tan]:\n1. 6 sc in a magic ring (6)\n2. 6 inc (12)\n3. (sc, inc) x 6 (18)'
+                  }
+                  spellCheck={false}
+                  autoCapitalize="off"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  value={patternText}
+                  onMouseMove={(e) => {
+                    const ta = textareaRef.current;
+                    const stackEl = ta?.closest('.editor-highlight-stack');
+                    if (!ta || !stackEl) return;
+                    const taRect = ta.getBoundingClientRect();
+                    const stackRect = stackEl.getBoundingClientRect();
+                    const padTop = 14;
+                    const lineHeight = 22;
+                    const relY = e.clientY - taRect.top - padTop;
+                    const lineNum = Math.floor(relY / lineHeight) + 1;
+                    if (lineDiagnosticsMap.has(lineNum)) {
+                      const lineBottomInStack =
+                        taRect.top - stackRect.top + padTop + lineNum * lineHeight + 2;
+                      openDiagHover(
+                        lineNum,
+                        Math.max(24, Math.min(stackRect.height - 40, lineBottomInStack))
+                      );
+                    } else if (hoveredDiagLine !== null) {
+                      scheduleCloseDiagHover();
+                    }
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                  }}
+                  onDrop={(e) => {
+                    const file = e.dataTransfer?.files?.[0];
+                    if (
+                      file &&
+                      (file.name.toLowerCase().endsWith('.txt') || file.type === 'text/plain')
+                    ) {
+                      e.preventDefault();
+                      void loadTxtFile(file);
+                    }
+                  }}
+                  onChange={(e) => {
+                    setActiveExampleId('custom');
+                    setPatternText(e.target.value);
+                  }}
+                />
+              </div>
             </div>
-            <pre
-              ref={highlightBackdropRef}
-              className="pattern-highlight-backdrop"
-              aria-hidden="true"
-            >
-              {highlightedLines.map((node, idx) => {
-                const sev = lineSeverityMap.get(idx + 1);
-                return (
-                  <div
-                    key={idx}
-                    className={`backdrop-line ${sev ? `backdrop-line-diag-${sev}` : ''}`}
-                  >
-                    {node}
-                  </div>
-                );
-              })}
-              <div className="backdrop-line" aria-hidden="true">
-                {'\u00A0'}
-              </div>
-              <div className="backdrop-line" aria-hidden="true">
-                {'\u00A0'}
-              </div>
-            </pre>
-            <textarea
-              ref={textareaRef}
-              className="pattern-textarea"
-              aria-label="Crochet pattern instructions"
-              placeholder={
-                'Paste or type a crochet pattern here, drop a .txt file, or click "Examples (11 CC0)" above...\n\nExample:\nHead [tan]:\n1. 6 sc in a magic ring (6)\n2. 6 inc (12)\n3. (sc, inc) x 6 (18)'
-              }
-              spellCheck={false}
-              autoCapitalize="off"
-              autoComplete="off"
-              autoCorrect="off"
-              value={patternText}
-              onScroll={() => {
-                syncEditorScroll();
-                setHoveredDiagLine(null);
-              }}
-              onMouseMove={(e) => {
-                const ta = textareaRef.current;
-                if (!ta) return;
-                const rect = ta.getBoundingClientRect();
-                const style = window.getComputedStyle(ta);
-                const padTop = parseFloat(style.paddingTop) || 13.6;
-                const lineHeight = parseFloat(style.lineHeight) || 21.3;
-                const relY = e.clientY - rect.top + ta.scrollTop - padTop;
-                const lineNum = Math.floor(relY / lineHeight) + 1;
-                if (lineDiagnosticsMap.has(lineNum)) {
-                  const topPx =
-                    padTop + lineNum * lineHeight - ta.scrollTop + 2;
-                  openDiagHover(lineNum, Math.max(24, Math.min(rect.height - 40, topPx)));
-                } else if (hoveredDiagLine !== null) {
-                  scheduleCloseDiagHover();
-                }
-              }}
-              onDragOver={(e) => {
-                e.preventDefault();
-              }}
-              onDrop={(e) => {
-                const file = e.dataTransfer?.files?.[0];
-                if (
-                  file &&
-                  (file.name.toLowerCase().endsWith('.txt') || file.type === 'text/plain')
-                ) {
-                  e.preventDefault();
-                  void loadTxtFile(file);
-                }
-              }}
-              onChange={(e) => {
-                setActiveExampleId('custom');
-                setPatternText(e.target.value);
-              }}
-            />
 
             {hoveredDiagLine && lineDiagnosticsMap.has(hoveredDiagLine.line) && (
               <div
