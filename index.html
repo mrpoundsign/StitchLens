@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      try {
+        const saved = localStorage.getItem('color-scheme');
+        if (saved === 'light' || saved === 'dark') {
+          document.querySelector('meta[name="color-scheme"]').content = saved;
+        }
+      } catch {}
+      // If someone opens root URL with a #z= or #u= share hash, redirect straight to ./app/#...
+      if (location.hash.startsWith('#z=') || location.hash.startsWith('#u=')) {
+        location.replace('./app/' + location.hash);
+      }
+    </script>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="stylesheet" href="/src/styles/app.css" />
+    <title>StitchLens — Interactive 3D Crochet Pattern Visualizer</title>
+  </head>
+  <body>
+    <div class="landing-page">
+      <header class="top-header">
+        <div class="brand-lockup">
+          <svg
+            width="28"
+            height="28"
+            viewBox="0 0 64 64"
+            aria-hidden="true"
+            style="flex-shrink: 0"
+          >
+            <rect width="64" height="64" rx="15" fill="#0f172a" />
+            <circle cx="28" cy="34" r="16" fill="none" stroke="#38bdf8" stroke-width="5" />
+            <path
+              d="M36 46 L52 14 C54 10, 49 9, 47 13"
+              fill="none"
+              stroke="#34d399"
+              stroke-width="4.5"
+              stroke-linecap="round"
+            />
+          </svg>
+          <h1>StitchLens</h1>
+          <span class="brand-badge">v0.0.1</span>
+        </div>
+
+        <div class="header-actions">
+          <a href="./app/" class="btn btn-primary">Open App &rarr;</a>
+          <a
+            href="https://github.com/mrpoundsign/StitchLens/issues"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-report-issue"
+          >
+            ! Report Issue (v0.0.1)
+          </a>
+          <button type="button" id="theme-toggle-btn" class="btn">Toggle Theme</button>
+        </div>
+      </header>
+
+      <main class="landing-main">
+        <section class="landing-hero">
+          <div class="hero-pill">Free &middot; Zero-Install &middot; 100% Browser-Based</div>
+          <h2>See your crochet patterns in 3D&mdash;stitch by stitch.</h2>
+          <p class="hero-lead">
+            Paste standard US/UK crochet instructions or rough live-drafted notes to visualize how
+            flat rows, magic-ring spirals, oval bases, and multi-piece plushies take shape in 3D
+            before you pick up yarn and hook.
+          </p>
+          <div class="hero-cta-row">
+            <a href="./app/" class="btn btn-primary hero-btn-lg">Launch StitchLens App &rarr;</a>
+            <a href="#starter-patterns" class="btn hero-btn-lg">Explore 11 CC0 Starter Patterns</a>
+          </div>
+        </section>
+
+        <section class="landing-features" aria-label="Key capabilities">
+          <article class="feature-card">
+            <h3>Live Scratchpad &amp; Stitch-Count Checker</h3>
+            <p>
+              Draft patterns without spellcheck squiggles. Understands Word-style numbered lists
+              (<code>3. Chain, turn, 2 inc (4)</code>), row ranges, omitted flat-row turns,
+              <code>#</code> / <code>//</code> comments, and verifies stitch counts on every row.
+            </p>
+          </article>
+
+          <article class="feature-card">
+            <h3>Step-by-Step Hook Target Spotlight</h3>
+            <p>
+              Never guess where your hook goes next. Scrub stitch-by-stitch or row-by-row while a
+              glowing target ring highlights the exact Front Loop (<code>FLO</code>), Back Loop
+              (<code>BLO</code>), post, chain space, or underside chain.
+            </p>
+          </article>
+
+          <article class="feature-card">
+            <h3>Plush 3D Yarn &amp; Diagram X-Ray Views</h3>
+            <p>
+              Toggle between tactile twisted-ply 3D yarn loops and a topological stitch-graph
+              diagram color-coded by pattern yarn color, alternating rows, stitch height, or
+              tension stress.
+            </p>
+          </article>
+
+          <article class="feature-card">
+            <h3>Plain-English Assembly &amp; 3D Click-to-Pin</h3>
+            <p>
+              Assemble multi-part amigurumi and rolled flower bouquets using plain English
+              (<code>Attach Left Ear to left of Head at Rnd 4</code>) or click any stitch directly
+              on the 3D model to pin pieces together.
+            </p>
+          </article>
+        </section>
+
+        <section id="starter-patterns" class="landing-gallery">
+          <div class="gallery-section-header">
+            <h2>CC0 &amp; Public-Domain Starter Patterns</h2>
+            <p>
+              Click any example below to open it directly in the interactive 3D App. All bundled
+              examples are dedicated to the public domain (<code>CC0-1.0</code> or pre-1930 Public
+              Domain).
+            </p>
+          </div>
+
+          <div class="example-grid">
+            <article class="example-card">
+              <div>
+                <div class="example-meta" style="margin-block-end: 0.45rem">
+                  <span class="meta-pill">Props &amp; Plushies</span>
+                  <span class="meta-pill">Intermediate</span>
+                  <span class="meta-pill">CC0-1.0</span>
+                </div>
+                <h3>Pointed Crest Shield &amp; Mini Sword</h3>
+                <p style="font-size: 0.82rem; color: var(--text-secondary); margin-block: 0.4rem">
+                  Live-drafted flat shield with omitted turns, mixed-height top crest, grey
+                  perimeter border, and a 3D magic-ring sword.
+                </p>
+              </div>
+              <a href="./app/?example=shield_and_sword" class="btn btn-primary">Open in App &rarr;</a>
+            </article>
+
+            <article class="example-card">
+              <div>
+                <div class="example-meta" style="margin-block-end: 0.45rem">
+                  <span class="meta-pill">Props &amp; Plushies</span>
+                  <span class="meta-pill">Designer</span>
+                  <span class="meta-pill">CC0-1.0</span>
+                </div>
+                <h3>Plushie Head + Tapestry Muzzle &amp; Ears</h3>
+                <p style="font-size: 0.82rem; color: var(--text-secondary); margin-block: 0.4rem">
+                  3D character head with inline mid-round color changes for a dark-brown snout
+                  patch plus two attached ears.
+                </p>
+              </div>
+              <a href="./app/?example=capy_head_muzzle" class="btn btn-primary">Open in App &rarr;</a>
+            </article>
+
+            <article class="example-card">
+              <div>
+                <div class="example-meta" style="margin-block-end: 0.45rem">
+                  <span class="meta-pill">Foundations &amp; Shaping</span>
+                  <span class="meta-pill">Beginner</span>
+                  <span class="meta-pill">CC0-1.0</span>
+                </div>
+                <h3>Ideal 6-sc Amigurumi Sphere</h3>
+                <p style="font-size: 0.82rem; color: var(--text-secondary); margin-block: 0.4rem">
+                  The foundational building block of 3D plushies: magic ring start, proportional
+                  increases, straight equator, and invisible decreases.
+                </p>
+              </div>
+              <a href="./app/?example=amigurumi_sphere" class="btn btn-primary">Open in App &rarr;</a>
+            </article>
+
+            <article class="example-card">
+              <div>
+                <div class="example-meta" style="margin-block-end: 0.45rem">
+                  <span class="meta-pill">Foundations &amp; Shaping</span>
+                  <span class="meta-pill">Beginner</span>
+                  <span class="meta-pill">CC0-1.0</span>
+                </div>
+                <h3>3D Oval Base (Both Sides of Chain)</h3>
+                <p style="font-size: 0.82rem; color: var(--text-secondary); margin-block: 0.4rem">
+                  Crocheting down a chain, fanning 3 sc into the end chain, and pivoting onto the
+                  underside of the chain to build an oval pod.
+                </p>
+              </div>
+              <a href="./app/?example=oval_foot_base" class="btn btn-primary">Open in App &rarr;</a>
+            </article>
+
+            <article class="example-card">
+              <div>
+                <div class="example-meta" style="margin-block-end: 0.45rem">
+                  <span class="meta-pill">Foundations &amp; Shaping</span>
+                  <span class="meta-pill">Intermediate</span>
+                  <span class="meta-pill">CC0-1.0</span>
+                </div>
+                <h3>BLO Structured Basket + Post Ribbing</h3>
+                <p style="font-size: 0.82rem; color: var(--text-secondary); margin-block: 0.4rem">
+                  A single Back-Loop-Only (BLO) round hinges a flat base 90 degrees upward into
+                  vertical walls, finished with FPdc/BPdc ribbing.
+                </p>
+              </div>
+              <a href="./app/?example=blo_ribbed_basket" class="btn btn-primary">Open in App &rarr;</a>
+            </article>
+
+            <article class="example-card">
+              <div>
+                <div class="example-meta" style="margin-block-end: 0.45rem">
+                  <span class="meta-pill">Bouquets &amp; Glue</span>
+                  <span class="meta-pill">Intermediate</span>
+                  <span class="meta-pill">CC0-1.0</span>
+                </div>
+                <h3>3D Rolled Rose + Glued Stem &amp; Leaf</h3>
+                <p style="font-size: 0.82rem; color: var(--text-secondary); margin-block: 0.4rem">
+                  Shows how a flat scalloped shell strip coils and glues onto a floral wire stem
+                  with a calyx and leaf.
+                </p>
+              </div>
+              <a href="./app/?example=rolled_rose_bouquet" class="btn btn-primary">Open in App &rarr;</a>
+            </article>
+
+            <article class="example-card">
+              <div>
+                <div class="example-meta" style="margin-block-end: 0.45rem">
+                  <span class="meta-pill">Motifs &amp; Lace</span>
+                  <span class="meta-pill">Beginner</span>
+                  <span class="meta-pill">CC0-1.0</span>
+                </div>
+                <h3>Classic Multi-Color Granny Square</h3>
+                <p style="font-size: 0.82rem; color: var(--text-secondary); margin-block: 0.4rem">
+                  Traditional joined motif worked into ch-2 corner spaces and ch-1 side spaces with
+                  round-by-round color changes.
+                </p>
+              </div>
+              <a href="./app/?example=granny_square" class="btn btn-primary">Open in App &rarr;</a>
+            </article>
+
+            <article class="example-card">
+              <div>
+                <div class="example-meta" style="margin-block-end: 0.45rem">
+                  <span class="meta-pill">Foundations &amp; Shaping</span>
+                  <span class="meta-pill">Intermediate</span>
+                  <span class="meta-pill">CC0-1.0</span>
+                </div>
+                <h3>Short-Row 3D Elbow / Snout Bend</h3>
+                <p style="font-size: 0.82rem; color: var(--text-secondary); margin-block: 0.4rem">
+                  Demonstrates how turning mid-row inserts a wedge of extra fabric on one side to
+                  bend a panel without seaming.
+                </p>
+              </div>
+              <a href="./app/?example=short_row_bend" class="btn btn-primary">Open in App &rarr;</a>
+            </article>
+
+            <article class="example-card">
+              <div>
+                <div class="example-meta" style="margin-block-end: 0.45rem">
+                  <span class="meta-pill">Foundations &amp; Shaping</span>
+                  <span class="meta-pill">Intermediate</span>
+                  <span class="meta-pill">CC0-1.0</span>
+                </div>
+                <h3>Hyperbolic Crochet Coral Ruffle</h3>
+                <p style="font-size: 0.82rem; color: var(--text-secondary); margin-block: 0.4rem">
+                  Increasing every 2nd stitch forces circumference to grow exponentially into
+                  symmetric 3D hyperbolic saddle waves.
+                </p>
+              </div>
+              <a href="./app/?example=hyperbolic_coral" class="btn btn-primary">Open in App &rarr;</a>
+            </article>
+
+            <article class="example-card">
+              <div>
+                <div class="example-meta" style="margin-block-end: 0.45rem">
+                  <span class="meta-pill">Foundations &amp; Shaping</span>
+                  <span class="meta-pill">Beginner</span>
+                  <span class="meta-pill">CC0-1.0</span>
+                </div>
+                <h3>Beginner Stitch-Height Swatch (sc / hdc / dc / tr)</h3>
+                <p style="font-size: 0.82rem; color: var(--text-secondary); margin-block: 0.4rem">
+                  Side-by-side height comparison of single, half-double, double, and treble crochet
+                  rows on a flat rectangular swatch.
+                </p>
+              </div>
+              <a href="./app/?example=flat_swatch_sampler" class="btn btn-primary">Open in App &rarr;</a>
+            </article>
+
+            <article class="example-card">
+              <div>
+                <div class="example-meta" style="margin-block-end: 0.45rem">
+                  <span class="meta-pill">Motifs &amp; Lace</span>
+                  <span class="meta-pill">Intermediate</span>
+                  <span class="meta-pill">Public Domain (1918)</span>
+                </div>
+                <h3>1918 Vintage Picot Star Medallion</h3>
+                <p style="font-size: 0.82rem; color: var(--text-secondary); margin-block: 0.4rem">
+                  Adapted from Jane Eayre Fryer's "The Mary Frances Knitting and Crocheting Book"
+                  (1918, Public Domain) featuring chain arches and picots.
+                </p>
+              </div>
+              <a href="./app/?example=vintage_medallion_1918" class="btn btn-primary">Open in App &rarr;</a>
+            </article>
+          </div>
+        </section>
+      </main>
+
+      <footer class="landing-footer">
+        <span>
+          <strong>StitchLens v0.0.1</strong> &middot; Licensed under
+          <a
+            href="https://github.com/mrpoundsign/StitchLens/blob/main/LICENSE"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            AGPL-3.0
+          </a>
+          (<a
+            href="https://github.com/mrpoundsign/StitchLens"
+            target="_blank"
+            rel="noopener noreferrer"
+          >Source Code</a>) &middot; Bundled starter patterns: <code>CC0-1.0</code> / Public Domain
+        </span>
+        <span>
+          Found a bug or pattern quirk? Mention <strong>v0.0.1</strong> on the
+          <a
+            href="https://github.com/mrpoundsign/StitchLens/issues"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            GitHub Issues page
+          </a>
+        </span>
+      </footer>
+    </div>
+
+    <script>
+      (function () {
+        const btn = document.getElementById('theme-toggle-btn');
+        const meta = document.querySelector('meta[name="color-scheme"]');
+        if (!btn || !meta) return;
+        function isDark() {
+          const c = meta.getAttribute('content');
+          if (c === 'dark') return true;
+          if (c === 'light') return false;
+          return window.matchMedia('(prefers-color-scheme: dark)').matches;
+        }
+        function updateLabel() {
+          btn.textContent = isDark() ? 'Light Theme' : 'Dark Theme';
+        }
+        updateLabel();
+        btn.addEventListener('click', function () {
+          const sysDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          const nextDark = !isDark();
+          if (nextDark === sysDark) {
+            try {
+              localStorage.removeItem('color-scheme');
+            } catch {}
+            meta.setAttribute('content', 'light dark');
+          } else {
+            const val = nextDark ? 'dark' : 'light';
+            try {
+              localStorage.setItem('color-scheme', val);
+            } catch {}
+            meta.setAttribute('content', val);
+          }
+          updateLabel();
+        });
+      })();
+    </script>
+  </body>
+</html>
