@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { compilePattern } from '../compiler/virtualHook';
+import {
+  detectPatternDialect,
+  transcribePatternDialect,
+} from '../parser/transcribeDialect';
 import { solveStitchGeometry } from '../physics/solver';
 import { EXAMPLE_PATTERNS } from '../../examples/catalog';
 import { highlightPatternLine } from '../../ui/syntaxHighlight';
@@ -400,6 +404,91 @@ Colour: Skin tone
       earsMinX = Math.min(earsMinX, geom.positions[id * 3]);
     }
     expect(earsMinX).toBeGreaterThan(hairMaxX + 2);
+  });
+
+  it('transcribes pattern text between US, UK, and ES dialects while preserving comments, notes, and identical 3D stitch counts', () => {
+    const usPattern = `
+# Header comment with sc and dc that must not be touched
+Shield [royal]:
+1. 6 sc in a magic ring (6) // inline comment with sc
+2. BLO 6 inc (12)
+3. (sc, hdc, 2 dc, tr, dec) x 2, sl st, ch, turn (13)
+Freeform note about the single crochet border
+Fasten off
+`;
+    const usCompiled = compilePattern(usPattern, { dialect: 'US' });
+    expect(usCompiled.diagnostics).toEqual([]);
+
+    // 1. Transcribe US -> ES
+    const toEs = transcribePatternDialect(usPattern, 'US', 'ES');
+    expect(toEs.replacedCount).toBeGreaterThan(8);
+    expect(toEs.text).toContain('# Header comment with sc and dc that must not be touched');
+    expect(toEs.text).toContain('// inline comment with sc');
+    expect(toEs.text).toContain('Freeform note about the single crochet border');
+    expect(toEs.text).toContain('1. 6 pb en anillo mágico (6)');
+    expect(toEs.text).toContain('2. PHT 6 aum (12)');
+    expect(toEs.text).toContain('3. (pb, pma, 2 pa, pad, dism) x 2, pd, cad, girar (13)');
+    expect(toEs.text).toContain('Cerrar');
+    expect(detectPatternDialect(toEs.text)).toBe('ES');
+
+    const esCompiled = compilePattern(toEs.text, { dialect: 'ES' });
+    expect(esCompiled.diagnostics).toEqual([]);
+    expect(esCompiled.stitches.length).toBe(usCompiled.stitches.length);
+
+    // 2. Transcribe ES -> UK
+    const toUk = transcribePatternDialect(toEs.text, 'ES', 'UK');
+    expect(toUk.replacedCount).toBeGreaterThan(8);
+    expect(toUk.text).toContain('1. 6 dc in a magic ring (6)');
+    expect(toUk.text).toContain('2. BLO 6 inc (12)');
+    expect(toUk.text).toContain('3. (dc, htr, 2 tr, dtr, dec) x 2, sl st, ch, turn (13)');
+    expect(toUk.text).toContain('Fasten off');
+    expect(detectPatternDialect(toUk.text)).toBe('UK');
+
+    const ukCompiled = compilePattern(toUk.text, { dialect: 'UK' });
+    expect(ukCompiled.diagnostics).toEqual([]);
+    expect(ukCompiled.stitches.length).toBe(usCompiled.stitches.length);
+
+    // 3. Transcribe UK -> US
+    const backToUs = transcribePatternDialect(toUk.text, 'UK', 'US');
+    expect(backToUs.text).toContain('1. 6 sc in a magic ring (6)');
+    expect(backToUs.text).toContain('3. (sc, hdc, 2 dc, tr, dec) x 2, sl st, ch, turn (13)');
+    expect(detectPatternDialect(backToUs.text)).toBe('US');
+  });
+
+  it('compiles circular ch-30 foundation with "1sc in each stitch around (30)", R2-R8 ranges, and keeps smaller decrease rings at the top (+Y)', () => {
+    const testerSnippet1 = `
+chain 30
+Rnd 2 1sc in each stitch around (30)
+Rnd 3: 1sc in each stitch around (30)
+Rnd 4: 5sc, scdec x 10, 5sc (20)
+Rnd 5: 6sc, scdec x4, 6sc (16)
+Rnd 6: 6sc, scdec x2, 6sc (14)
+`;
+    const c1 = compilePattern(testerSnippet1);
+    expect(c1.diagnostics).toEqual([]);
+    expect(c1.rows.map((r) => r.emittedStitchCount)).toEqual([30, 30, 30, 20, 16, 14]);
+
+    const g1 = solveStitchGeometry(c1);
+    const meanYForRow = (rowNum: number) => {
+      const sts = c1.stitches.filter((s) => s.rowNumber === rowNum);
+      return sts.reduce((acc, s) => acc + g1.positions[s.id * 3 + 1], 0) / sts.length;
+    };
+    // Each round must climb strictly upward in Y so the smaller 14-stitch ring is at the TOP!
+    expect(meanYForRow(2)).toBeGreaterThan(meanYForRow(1));
+    expect(meanYForRow(3)).toBeGreaterThan(meanYForRow(2));
+    expect(meanYForRow(4)).toBeGreaterThan(meanYForRow(3));
+    expect(meanYForRow(5)).toBeGreaterThan(meanYForRow(4));
+    expect(meanYForRow(6)).toBeGreaterThan(meanYForRow(5));
+
+    // Also verify "rnd 1: ch 30" + "R2-R8 1sc in each (30)" syntax
+    const testerSnippet2 = `
+rnd 1: ch 30
+R2-R8 1sc in each (30)
+`;
+    const c2 = compilePattern(testerSnippet2);
+    expect(c2.diagnostics).toEqual([]);
+    expect(c2.rows.length).toBe(8);
+    expect(c2.rows.every((r) => r.emittedStitchCount === 30)).toBe(true);
   });
 });
 

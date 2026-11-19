@@ -2,7 +2,7 @@ import { ReactNode } from 'react';
 
 function renderHighlightedClause(text: string, keyPrefix: string): ReactNode[] {
   const tokenRegex =
-    /(\[(?:RS|WS|[a-zA-Z0-9\s#_-]+)\]|\b(?:BLO|FLO|FP|BP|CC|MR|MC|RS|WS)\b:?|\b(?:ch|chain|chains|sl\s*st|slip\s+stitch(?:es)?|sc|single\s+crochet(?:s)?|hdc|half\s+double\s+crochet(?:s)?|dc|double\s+crochet(?:s)?|tr|trc|treble|dtr|htr|inc|increase(?:s)?|dec|decrease(?:s)?|invdec|sc2tog|sc3tog|dc2tog|dc3tog|hdc2tog|fpdc|bpdc|fphdc|bphdc|fpsc|bpsc|fptr|bptr|bobble|puff|popcorn|cluster|picot|v-st|pb|pa|pma|pad|pd|pe|cad|cadenas?|aum|dism|pht|phd|am|magic\s+ring|magic\s+circle|turn|join|sk|skip)\b|\b\d+\s*(?:sc|hdc|dc|tr|ch|sl\s*st|inc|dec|pb|pa|pma|cad|aum|dism)\b|(?:x|\*)\s*\d+|\b\d+\s*times\b)/gi;
+    /(\[(?:RS|WS|[a-zA-Z0-9\s#_-]+)\]|\b(?:BLO|FLO|PHT|PHD|FP|BP|CC|MR|MC|RS|WS)\b:?|\b(?:ch|chain|chains|sl\s*st|slip\s+stitch(?:es)?|sc|single\s+crochet(?:s)?|hdc|half\s+double\s+crochet(?:s)?|dc|double\s+crochet(?:s)?|tr|trc|treble|dtr|htr|inc|increase(?:s)?|dec|decrease(?:s)?|invdec|sc2tog|sc3tog|dc2tog|dc3tog|hdc2tog|fpdc|bpdc|fphdc|bphdc|fpsc|bpsc|fptr|bptr|fptrc|bptrc|fphtr|bphtr|fpdtr|bpdtr|fppb|bppb|fppma|bppma|fppa|bppa|bobble|puff|popcorn|cluster|picot|v-st|pb|pa|pma|pad|pd|pe|cad|cadenas?|aum|dism|pht|phd|am|anillo\s+m[aá]gico|magic\s+ring|magic\s+circle|turn|girar|join|unir|sk|skip|saltar)\b|\b\d+\s*(?:sc|hdc|dc|tr|htr|dtr|ch|sl\s*st|inc|dec|pb|pa|pma|pad|pd|cad|aum|dism)\b|(?:x|\*)\s*\d+|\b\d+\s*times\b)/gi;
 
   const nodes: ReactNode[] = [];
   let lastIndex = 0;
@@ -18,12 +18,12 @@ function renderHighlightedClause(text: string, keyPrefix: string): ReactNode[] {
     let cls = 'syn-stitch';
     if (
       lower.startsWith('[') ||
-      /^(?:blo|flo|fp|bp|cc|rs|ws)/i.test(lower)
+      /^(?:blo|flo|pht|phd|fp|bp|cc|rs|ws)/i.test(lower)
     ) {
       cls = 'syn-modifier';
     } else if (/^(?:x|\*)\s*\d+|\d+\s*times$/i.test(lower)) {
       cls = 'syn-repeat';
-    } else if (/^(?:turn|join|sk|skip)$/i.test(lower)) {
+    } else if (/^(?:turn|girar|join|unir|sk|skip|saltar)$/i.test(lower)) {
       cls = 'syn-keyword';
     }
     nodes.push(
@@ -122,9 +122,9 @@ export function highlightPatternLine(
     }
   }
 
-  // 5. Row / Round / Numbered Instruction Line
+  // 5. Row / Round / Numbered Instruction Line (or bare foundation chain line like "chain 30")
   const rowHeaderMatch = mainPart.match(
-    /^(\s*(?:foundation\s*[:.-]|(?:rnds?|rounds?|rows?|r)\s*\d+(?:\s*[-–—to]+\s*\d+)?(?:\s*\([^)]*\))?(?:\s*\[(?:RS|WS)\])?\s*[:.-]|\d+(?:\s*[-–—]\s*\d+)?\s*[.):-])\s*)(.+)$/i
+    /^(\s*(?:foundation\s*[:.-]|(?:rnds?|rounds?|rows?|r)\s*\d+(?:\s*[-–—to]+\s*(?:(?:rnds?|rounds?|rows?|r)\s*)?\d+)?(?:\s*\([^)]*\))?(?:\s*\[(?:RS|WS)\])?(?:\s*[:.-]|\s+)|\d+(?:\s*[-–—]\s*\d+)?\s*[.):-])\s*)(.+)$/i
   );
   if (rowHeaderMatch) {
     const headerPart = rowHeaderMatch[1];
@@ -158,6 +158,20 @@ export function highlightPatternLine(
             {countSuffix}
           </span>
         )}
+        {trailingComment && <span className="syn-comment">{trailingComment}</span>}
+      </>
+    );
+  }
+
+  // 5.5 Bare unnumbered foundation chain or magic ring line ("chain 30", "ch 12")
+  if (
+    /^(?:(?:ch|chain|chains|cad|cadenas)\s+\d+|\d+\s*(?:ch|chain|chains|cad|cadenas)|\d+\s*(?:sc|dc|pb)\s+in\s+(?:a\s+)?(?:magic\s+ring|mr|mc))\b/i.test(
+      trimmed
+    )
+  ) {
+    return (
+      <>
+        {renderHighlightedClause(mainPart, `L${lineIndex}`)}
         {trailingComment && <span className="syn-comment">{trailingComment}</span>}
       </>
     );

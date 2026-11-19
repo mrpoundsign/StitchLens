@@ -13,6 +13,7 @@ interface DistanceConstraint {
   restLength: number;
   compliance: number;
   isPrimaryPost: boolean;
+  enforceUpwardY: boolean;
 }
 
 export interface SolveOptions {
@@ -419,14 +420,18 @@ function seedRoundPiece(
         deltaY = avgHeight * 0.22;
         const excessRatio = circumference / Math.max(1, 2 * Math.PI * targetRadius) - 1;
         hyperbolicAmplitude = Math.min(2.6, Math.sqrt(Math.max(0, excessRatio)) * 1.65 * avgHeight);
-      } else if (Math.abs(radialDiff) >= avgHeight * 0.92) {
-        // Flat growth (or steep decrease): lies nearly in plane
-        targetRadius = prevRadius + Math.sign(radialDiff) * avgHeight * 0.95;
-        deltaY = radialDiff < 0 ? avgHeight * 0.38 : avgHeight * 0.06;
+      } else if (radialDiff >= avgHeight * 0.92) {
+        // Flat outward disc growth: lies nearly in plane
+        targetRadius = prevRadius + avgHeight * 0.95;
+        deltaY = avgHeight * 0.06;
+      } else if (radialDiff <= -avgHeight * 0.85) {
+        // Steep inward decrease round (e.g. 30 sts -> 20 sts): still climbs upward (+Y) by at least 0.52 * avgHeight while tapering inward!
+        targetRadius = Math.max(rawTargetRadius, prevRadius - avgHeight * 0.85);
+        deltaY = avgHeight * 0.58;
       } else {
         // Spherical / Conical / Cylindrical 3D shaping!
         targetRadius = rawTargetRadius;
-        deltaY = Math.sqrt(Math.max(0.08, avgHeight * avgHeight - radialDiff * radialDiff));
+        deltaY = Math.sqrt(Math.max(0.25 * avgHeight * avgHeight, avgHeight * avgHeight - radialDiff * radialDiff));
       }
     }
 
@@ -692,11 +697,23 @@ function patternChainSpacesInRow(ringIds: number[], stitches: StitchNode[]): num
 }
 
 function buildDistanceConstraints(pattern: CompiledPattern): DistanceConstraint[] {
-  const { stitches } = pattern;
+  const { stitches, pieces } = pattern;
   const constraints: DistanceConstraint[] = [];
+  const flatOrHyperbolicPieces = new Set<string>();
+  for (const p of pieces) {
+    const isFlatJoined =
+      p.workMode === 'joined_rounds' &&
+      !p.stuffed &&
+      !p.stitchIds.some((id) => stitches[id].anchors[0]?.site === 'blo');
+    const hasDecreases = p.stitchIds.some((id) => stitches[id].anchors.length > 1);
+    if (isFlatJoined || (!p.stuffed && !hasDecreases && p.workMode !== 'flat_rows')) {
+      flatOrHyperbolicPieces.add(p.id);
+    }
+  }
 
   for (const st of stitches) {
     const dim = STITCH_DIMENSIONS[st.kind];
+    const isFlatOrHyperbolic = flatOrHyperbolicPieces.has(st.pieceId);
 
     // 1. Working-yarn sequential edge
     if (st.prevStitchId !== null && stitches[st.prevStitchId]?.pieceId === st.pieceId) {
@@ -707,6 +724,7 @@ function buildDistanceConstraints(pattern: CompiledPattern): DistanceConstraint[
         restLength: Math.max(0.2, restW),
         compliance: st.isTurningChain ? 0.08 : 0.015,
         isPrimaryPost: false,
+        enforceUpwardY: false,
       });
     }
 
@@ -715,12 +733,21 @@ function buildDistanceConstraints(pattern: CompiledPattern): DistanceConstraint[
       const anc = st.anchors[k];
       if (anc.targetStitchId >= 0 && anc.targetStitchId < stitches.length) {
         const restH = anc.site === 'ring_center' ? 0.85 : Math.max(0.25, dim.height * 0.96);
+        const parentSt = stitches[anc.targetStitchId];
+        const enforceUpwardY =
+          k === 0 &&
+          !isFlatOrHyperbolic &&
+          !st.isTurningChain &&
+          anc.site !== 'ring_center' &&
+          anc.site !== 'row_end_post' &&
+          parentSt.rowNumber < st.rowNumber;
         constraints.push({
           a: anc.targetStitchId,
           b: st.id,
           restLength: restH,
           compliance: anc.site === 'chain_space' ? 0.05 : 0.012,
           isPrimaryPost: k === 0,
+          enforceUpwardY,
         });
       }
     }
@@ -1044,6 +1071,7 @@ function applyAssemblyTransforms(
           restLength: Math.max(0.2, Math.abs(offsetDist) + 0.25),
           compliance: 0.02,
           isPrimaryPost: false,
+          enforceUpwardY: false,
         });
       }
     }
@@ -1066,6 +1094,7 @@ function applyAssemblyTransforms(
           restLength: 0.35,
           compliance: 0.01,
           isPrimaryPost: false,
+          enforceUpwardY: false,
         });
       }
     }
@@ -1214,6 +1243,19 @@ function projectDistanceConstraints(
       pos[ib] += dx * corr * wB;
       pos[ib + 1] += dy * corr * wB;
       pos[ib + 2] += dz * corr * wB;
+    }
+
+    // Enforce upward vertical growth on primary post links so later rounds never invert below parent rounds!
+    if (c.enforceUpwardY && pos[ib + 1] < pos[ia + 1] + 0.25) {
+      const deficit = 0.28 - (pos[ib + 1] - pos[ia + 1]);
+      if (deficit > 0) {
+        if (wA > 0 && wB > 0) {
+          pos[ia + 1] -= deficit * 0.35;
+          pos[ib + 1] += deficit * 0.65;
+        } else if (wB > 0) {
+          pos[ib + 1] += deficit;
+        }
+      }
     }
   }
 }

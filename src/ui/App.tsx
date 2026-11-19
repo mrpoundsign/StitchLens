@@ -6,6 +6,11 @@ import {
   CrochetDialect,
   SolvedGeometry,
 } from '../core/model/types';
+import {
+  detectPatternDialect,
+  DIALECT_LABELS,
+  transcribePatternDialect,
+} from '../core/parser/transcribeDialect';
 import { solveStitchGeometry } from '../core/physics/solver';
 import { EXAMPLE_PATTERNS, ExamplePattern } from '../examples/catalog';
 import {
@@ -503,11 +508,45 @@ export function App() {
       setPinningPieceId(null);
       setActiveExampleId('custom');
       setLoadedFileName(file.name);
+      const detected = detectPatternDialect(text);
+      if (detected && detected !== dialect) {
+        setDialect(detected);
+      }
       setPatternText(text);
       setCurrentStep(999999);
-      showToast(`Loaded "${file.name}"`);
+      showToast(
+        detected
+          ? `Loaded "${file.name}" (${DIALECT_LABELS[detected]})`
+          : `Loaded "${file.name}"`
+      );
     } catch {
       showToast('Could not read that .txt file.');
+    }
+  };
+
+  const handleChangeDialect = (nextDialect: CrochetDialect) => {
+    if (nextDialect === dialect) return;
+    const prevDialect = dialect;
+    setDialect(nextDialect);
+
+    if (!patternText.trim()) {
+      showToast(`Switched terms to ${DIALECT_LABELS[nextDialect]}`);
+      return;
+    }
+
+    const { text: convertedText, replacedCount } = transcribePatternDialect(
+      patternText,
+      prevDialect,
+      nextDialect
+    );
+    if (replacedCount > 0) {
+      setActiveExampleId('custom');
+      setPatternText(convertedText);
+      showToast(
+        `Transcribed ${replacedCount} stitch term${replacedCount === 1 ? '' : 's'} from ${prevDialect} to ${DIALECT_LABELS[nextDialect]}!`
+      );
+    } else {
+      showToast(`Switched terms to ${DIALECT_LABELS[nextDialect]}`);
     }
   };
 
@@ -761,7 +800,7 @@ export function App() {
             />
           </svg>
           <h1>StitchLens</h1>
-          <span className="brand-badge">v0.0.3 &middot; 3D Crochet Visualizer</span>
+          <span className="brand-badge">v0.0.4 &middot; 3D Crochet Visualizer</span>
         </div>
 
         <div className="header-actions">
@@ -798,7 +837,7 @@ export function App() {
             rel="noopener noreferrer"
             className="btn btn-report-issue"
           >
-            ! Report Issue (v0.0.3)
+            ! Report Issue (v0.0.4)
           </a>
 
           <button
@@ -833,7 +872,7 @@ export function App() {
                 id={dialectSelectId}
                 className="select-compact"
                 value={dialect}
-                onChange={(e) => setDialect(e.target.value as CrochetDialect)}
+                onChange={(e) => handleChangeDialect(e.target.value as CrochetDialect)}
               >
                 <option value="US">US Terms (sc / dc)</option>
                 <option value="UK">UK Terms (dc / tr)</option>

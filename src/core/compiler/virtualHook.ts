@@ -398,8 +398,16 @@ class PieceCompiler {
     const rowLastGlobalIdx = this.stitches.length - 1;
     if (rowLastGlobalIdx >= rowFirstGlobalIdx) {
       // Stitch count verification
+      const foundationChainsInRow =
+        state.emittedRowIds.length === 0
+          ? rowLastGlobalIdx - rowFirstGlobalIdx + 1
+          : 0;
       const primaryCount =
-        state.nonChainWorkedCount > 0 ? state.workedCount : state.emittedRowIds.length;
+        state.nonChainWorkedCount > 0
+          ? state.workedCount
+          : state.emittedRowIds.length > 0
+            ? state.emittedRowIds.length
+            : foundationChainsInRow;
 
       if (rowAst.declaredCount !== null) {
         const matchesTotal = rowAst.declaredCount === state.workedCount;
@@ -787,14 +795,27 @@ class PieceCompiler {
       }
 
       if (isInitialFoundation) {
-        if (this.workMode === 'unknown') this.workMode = 'flat_rows';
-        // Put foundation chains on flatBoundary (left-to-right `0..N-1`), hook starts at right end (`N-1`, going `-1` back toward `0`)!
-        this.flatBoundary = createdChainIds.map((id) => ({
-          stitchId: id,
-          defaultSite: 'both_loops',
-        }));
-        this.flatDir = -1;
-        this.flatCursor = this.flatBoundary.length - 1;
+        const isCircularChainFoundation = !this.pieceUsesFlatTurnsOrRows();
+        if (this.workMode === 'unknown') {
+          this.workMode = isCircularChainFoundation ? 'spiral_rounds' : 'flat_rows';
+        }
+        if (this.workMode === 'spiral_rounds' || this.workMode === 'joined_rounds') {
+          // Circular foundation chain (e.g. "chain 30" or "Rnd 1: ch 30" followed by "Rnd 2: 1sc in each stitch around (30)"):
+          // populate spiralQueue with all foundation chains so Rnd 2 works around the 30-chain ring!
+          this.closedBottom = false;
+          this.spiralQueue = createdChainIds.map((id) => ({
+            stitchId: id,
+            site: 'both_loops',
+          }));
+        } else {
+          // Put foundation chains on flatBoundary (left-to-right `0..N-1`), hook starts at right end (`N-1`, going `-1` back toward `0`)!
+          this.flatBoundary = createdChainIds.map((id) => ({
+            stitchId: id,
+            defaultSite: 'both_loops',
+          }));
+          this.flatDir = -1;
+          this.flatCursor = this.flatBoundary.length - 1;
+        }
       } else if (!isTurning && !isPicotChain && createdChainIds.length > 0) {
         // Register as an addressable chain-space arch for the next row/round!
         const csGroup: ChainSpaceGroup = {
@@ -892,16 +913,34 @@ class PieceCompiler {
     }
 
     // Case D: "in Nth ch from hook" offset adjustment on foundation chain!
-    if (stmt.target.kind === 'from_hook' && this.workMode === 'flat_rows') {
-      const skipCount = Math.max(1, stmt.target.offset - 1);
-      // Mark skipped chains near hook as turning chains and move cursor past them
-      for (let s = 0; s < skipCount && this.flatBoundary.length > 0; s++) {
-        const idx = Math.max(0, Math.min(this.flatBoundary.length - 1, this.flatCursor));
-        const skippedId = this.flatBoundary[idx].stitchId;
-        this.stitches[skippedId].isTurningChain = true;
-        this.flatBoundary.splice(idx, 1);
-        if (this.flatDir === -1) {
-          this.flatCursor = idx - 1;
+    if (stmt.target.kind === 'from_hook') {
+      if (
+        (this.workMode === 'spiral_rounds' || this.workMode === 'joined_rounds') &&
+        this.foundationIds.length > 0 &&
+        this.spiralQueue.length === this.foundationIds.length &&
+        this.rows.length <= 1
+      ) {
+        // Started on a chain without turns, but works "in 2nd ch from hook" (linear/oval chain start, not a circular ring!)
+        this.workMode = 'flat_rows';
+        this.flatBoundary = this.foundationIds.map((id) => ({
+          stitchId: id,
+          defaultSite: 'both_loops',
+        }));
+        this.flatDir = -1;
+        this.flatCursor = this.flatBoundary.length - 1;
+        this.spiralQueue = [];
+      }
+      if (this.workMode === 'flat_rows') {
+        const skipCount = Math.max(1, stmt.target.offset - 1);
+        // Mark skipped chains near hook as turning chains and move cursor past them
+        for (let s = 0; s < skipCount && this.flatBoundary.length > 0; s++) {
+          const idx = Math.max(0, Math.min(this.flatBoundary.length - 1, this.flatCursor));
+          const skippedId = this.flatBoundary[idx].stitchId;
+          this.stitches[skippedId].isTurningChain = true;
+          this.flatBoundary.splice(idx, 1);
+          if (this.flatDir === -1) {
+            this.flatCursor = idx - 1;
+          }
         }
       }
     }

@@ -116,7 +116,7 @@ function classifyMilestoneLine(trimmed: string): MilestoneAnnotation['kind'] | n
   if (/^(stuff|add\s+stuffing|polyfill|lightly\s+stuff|firmly\s+stuff)\b/.test(lower)) {
     return 'stuff';
   }
-  if (/^(fasten\s+off|fo\b|cut\s+yarn|weave\s+in|finish\s+off|tie\s+off)\b/.test(lower)) {
+  if (/^(fasten\s+off|fo\b|cut\s+yarn|weave\s+in|finish\s+off|tie\s+off|cerrar|rematar)\b/.test(lower)) {
     return 'fasten_off';
   }
   if (
@@ -416,18 +416,24 @@ function parseTargetSuffix(
     fifth: 5,
   };
   const fromHookRegex =
-    /(?:starting\s+)?\bin\s+(?:the\s+)?(\d+(?:st|nd|rd|th)?|first|second|third|fourth|fifth)\s+(?:ch|chain|cad|cadena)\s+from\s+(?:the\s+)?hook\s*:?\s*/i;
+    /(?:(?:starting|empezando)\s+)?\b(?:in|en)\s+(?:the\s+|la\s+)?(\d+(?:st|nd|rd|th|ª|°)?|first|second|third|fourth|fifth|segunda|tercera|cuarta)\s+(?:ch|chain|cad|cadena)\s+(?:from\s+(?:the\s+)?hook|desde\s+el\s+gancho)\s*:?\s*/i;
   const fromHookMatch = working.match(fromHookRegex);
   if (fromHookMatch) {
     const rawOrd = fromHookMatch[1].toLowerCase();
-    const offset = ordMap[rawOrd] ?? parseInt(rawOrd, 10) ?? 2;
+    const esOrdMap: Record<string, number> = {
+      ...ordMap,
+      segunda: 2,
+      tercera: 3,
+      cuarta: 4,
+    };
+    const offset = esOrdMap[rawOrd] ?? parseInt(rawOrd, 10) ?? 2;
     const core = working.replace(fromHookRegex, ' ').trim();
     return { core, target: { kind: 'from_hook', offset }, siteOverride };
   }
 
   // Chain space: "in next ch-2 sp", "in ch-sp", "in corner sp", "in ch-1 space"
   const chSpMatch = working.match(
-    /\bin\s+(?:the\s+)?(?:next\s+|same\s+)?(?:corner\s+)?(?:ch(?:ain)?(?:-\d+)?\s*(?:sp|space)|corner\s+space|arch)\b/i
+    /\b(?:in|en)\s+(?:the\s+|el\s+)?(?:next\s+|same\s+)?(?:corner\s+)?(?:(?:ch(?:ain)?|cad)(?:-\d+)?\s*(?:sp|space|espacio)|corner\s+space|arch)\b/i
   );
   if (chSpMatch) {
     const core = working.slice(0, chSpMatch.index).trim();
@@ -436,7 +442,7 @@ function parseTargetSuffix(
 
   // "in next N sts / chs" -> expands count if core didn't specify a count!
   const inNextCountMatch = working.match(
-    /\bin\s+(?:the\s+)?next\s+(\d+)\s*(?:sts?|stitches|chs?|chains)\b/i
+    /\b(?:in|en)\s+(?:the\s+)?next\s+(\d+)\s*(?:sts?|stitches|chs?|chains|pts?|puntos?)\b/i
   );
   if (inNextCountMatch) {
     const n = Number(inNextCountMatch[1]);
@@ -450,27 +456,32 @@ function parseTargetSuffix(
     };
   }
 
-  // Same / single stitch fan: "in same st", "in last ch", "in first st", "in the sc stitch", "in the last single crochet stitch", "in the next"
+  // Same / single stitch fan: "in same st", "in last ch", "in first st", "in the sc stitch", "in the last single crochet stitch", "in the next", "en el mismo pt"
   const inSingleMatch = working.match(
-    /\bin\s+(?:the\s+)?(?:same|last|first|next|sc|single\s+crochet|last\s+single\s+crochet)\s*(?:st|stitch|ch|chain)?\b/i
+    /\b(?:in|en)\s+(?:the\s+|el\s+|la\s+)?(?:same|last|first|next|mismo|último|ultimo|siguiente|sc|dc|pb|single\s+crochet|double\s+crochet|punto\s+bajo|last\s+single\s+crochet)\s*(?:st|stitch|ch|chain|pt|punto|cad|cadena)?\b/i
   );
   if (inSingleMatch) {
     const whichWord = inSingleMatch[0].toLowerCase();
     const core = working.slice(0, inSingleMatch.index).trim();
     const leadingNum = core.match(/^(\d+)\b/);
     const isMulti = leadingNum && Number(leadingNum[1]) > 1;
-    if (isMulti || /same|last|sc|single/.test(whichWord)) {
+    if (isMulti || /same|last|mismo|último|ultimo|sc|dc|pb|single|double|punto\s+bajo/.test(whichWord)) {
       return { core, target: { kind: 'same_stitch' }, siteOverride };
     }
     return { core, target: { kind: 'next_each' }, siteOverride };
   }
 
-  // "in each st around / across / to end" or trailing "around / across"
+  // "in each st around / across / to end", "in each", or trailing "around / across"
   const aroundMatch = working.match(
-    /\b(?:in\s+each\s+(?:st|stitch|ch|chain)\s+(?:around|across|to\s+end)|(?:in\s+each\s+(?:st|stitch))|(?:around|across))$/i
+    /\b(?:(?:in|en)\s+(?:each|cada)(?:\s+(?:st|stitch|ch|chain|pt|punto))?(?:\s+(?:around|across|to\s+end|alrededor))?|(?:around|across|alrededor))$/i
   );
   if (aroundMatch) {
-    const core = working.slice(0, aroundMatch.index).trim();
+    let core = working.slice(0, aroundMatch.index).trim();
+    const isInEach = /\b(?:in|en)\s+(?:each|cada)\b/i.test(aroundMatch[0]);
+    if (isInEach && /^1\s*(?=[a-z])/i.test(core)) {
+      // "1sc in each stitch around" or "1 sc in each" -> 1 stitch per parent around!
+      core = core.replace(/^1\s*/, '').trim();
+    }
     if (core.length > 0 && !/^\d+/.test(core)) {
       return { core, target: { kind: 'all_remaining' }, siteOverride };
     }
@@ -699,26 +710,28 @@ function parseStatementList(
       }
 
       // Turn
-      if (/^turn(?:\s+work)?$/i.test(part)) {
+      if (/^(?:turn(?:\s+work)?|girar)$/i.test(part)) {
         statements.push({ type: 'turn_op', span });
         continue;
       }
 
       // Fasten off
-      if (/^(?:fasten\s+off|fo|finish\s+off|cut\s+yarn)$/i.test(part)) {
+      if (/^(?:fasten\s+off|fo|finish\s+off|cut\s+yarn|cerrar|rematar)$/i.test(part)) {
         statements.push({ type: 'fasten_off_op', span });
         continue;
       }
 
       // Join round / ring
-      if (/\bjoin\b/i.test(part) && !/\bjoin\s+yarn\b/i.test(part)) {
+      if (/\b(?:join|unir)\b/i.test(part) && !/\bjoin\s+yarn\b/i.test(part)) {
         const formRing = /\bform\s+(?:a\s+)?ring\b|\bfirst\s+(?:ch|chain)\b/i.test(part);
         statements.push({ type: 'join_op', formFoundationRing: formRing, span });
         continue;
       }
 
-      // Skip stitches: "sk 2", "skip next 2 sts", "sk next ch"
-      const skipMatch = part.match(/^(?:sk|skip)(?:\s+(?:the\s+)?next)?(?:\s+(\d+))?\s*(?:sts?|stitches|chs?|chains|sp)?$/i);
+      // Skip stitches: "sk 2", "skip next 2 sts", "sk next ch", "saltar 1"
+      const skipMatch = part.match(
+        /^(?:sk|skip|saltar)(?:\s+(?:the\s+|el\s+)?(?:next|siguiente))?(?:\s+(\d+))?\s*(?:sts?|stitches|chs?|chains|sp|pts?|puntos?)?$/i
+      );
       if (skipMatch) {
         statements.push({
           type: 'skip_op',
@@ -1293,12 +1306,14 @@ export function parsePattern(rawText: string, options: ParseOptions = {}): Patte
     // 5. Row / Round / Auto-Numbered Lines:
     //    Examples:
     //    - "Rnd 1: 6 sc in MR (6)"
+    //    - "Rnd 2 1sc in each stitch around (30)" (optional colon after explicit Rnd/Row/R header)
+    //    - "R2-R8: 1sc in each" or "R2-R8 1sc in each" (repeated R/Rnd/Row prefix in range)
     //    - "Rnds 5-8: 24 sc (24)"
     //    - "Row 3 [RS]: ch 1, turn, sc across (10)"
     //    - "3. Chain, turn, 2 inc (4)"
     //    - "Foundation: ch 11"
     const rowHeaderMatch = trimmed.match(
-      /^(?:(foundation)\s*[:.-]|(rnds?|rounds?|rows?|r)\s*(\d+)(?:\s*[-–—to]+\s*(\d+))?(?:\s*\([^)]*\))?(?:\s*\[(RS|WS)\])?\s*[:.-]|(\d+)(?:\s*[-–—]\s*(\d+))?\s*[.):-])\s*(.+)$/i
+      /^(?:(foundation)\s*[:.-]|(rnds?|rounds?|rows?|r)\s*(\d+)(?:\s*[-–—to]+\s*(?:(?:rnds?|rounds?|rows?|r)\s*)?(\d+))?(?:\s*\([^)]*\))?(?:\s*\[(RS|WS)\])?(?:\s*[:.-]|\s+)|(\d+)(?:\s*[-–—]\s*(\d+))?\s*[.):-])\s*(.+)$/i
     );
 
     if (rowHeaderMatch) {
@@ -1350,6 +1365,30 @@ export function parsePattern(rawText: string, options: ParseOptions = {}): Patte
         });
       }
       continue;
+    }
+
+    // 5.5 Bare unnumbered foundation chain or magic ring line (e.g. "chain 30" or "ch 12, join" on line 1)
+    if (
+      /^(?:(?:ch|chain|chains|cad|cadenas)\s+\d+|\d+\s*(?:ch|chain|chains|cad|cadenas)|\d+\s*(?:sc|dc|pb)\s+in\s+(?:a\s+)?(?:magic\s+ring|mr|mc))\b/i.test(
+        trimmed
+      )
+    ) {
+      const piece = ensurePiece(lineNum);
+      const { cleanedBody, declaredCount } = extractDeclaredCount(trimmed);
+      const statements = parseStatementList(cleanedBody, lineNum, 0, dialect, diagnostics);
+      if (statements.length > 0) {
+        const nextNum =
+          piece.rows.length > 0 ? piece.rows[piece.rows.length - 1].rowNumber + 1 : 1;
+        piece.rows.push({
+          rowNumber: nextNum,
+          explicitModeHint: 'auto',
+          declaredCount,
+          statements,
+          sourceLine: lineNum,
+          rawHeader: piece.rows.length === 0 ? 'Foundation' : `Row ${nextNum}`,
+        });
+        continue;
+      }
     }
 
     // 6. Fallback: any unrecognized line beginning (no row/round number, no header colon, no color/border/directive)
