@@ -1,4 +1,4 @@
-export type CrochetDialect = 'US' | 'UK';
+export type CrochetDialect = 'US' | 'UK' | 'ES';
 
 export type PieceWorkMode = 'unknown' | 'flat_rows' | 'spiral_rounds' | 'joined_rounds';
 

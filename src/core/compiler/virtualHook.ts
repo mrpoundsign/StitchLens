@@ -100,11 +100,13 @@ class PieceCompiler {
       this.piece.stuffedOverride ??
       (this.workMode === 'spiral_rounds' && this.piece.rows.length >= 4 && hasDecreases);
 
-    // Default side-by-side spatial offset if multiple pieces exist and aren't attached yet
+    // Default 3D kit-grid spatial offset (4 columns per row) if multiple pieces exist and aren't attached
+    const gridCol = pieceIndex % 4;
+    const gridRow = Math.floor(pieceIndex / 4);
     const defaultOffset: [number, number, number] = this.piece.defaultOffset ?? [
-      pieceIndex * 14,
+      gridCol * 13,
       0,
-      0,
+      gridRow * 13,
     ];
     const defaultRotation: [number, number, number] = this.piece.defaultRotation ?? [0, 0, 0];
 
@@ -208,9 +210,29 @@ class PieceCompiler {
     return needed;
   }
 
-  private executeTurn(span: SourceSpan, rowNumber: number, rowSourceLine: number, emitChain: boolean, isImplicit: boolean): void {
+  private executeTurn(
+    span: SourceSpan,
+    rowNumber: number,
+    rowSourceLine: number,
+    emitChain: boolean,
+    isImplicit: boolean,
+    emittedRowIds?: number[]
+  ): void {
     if (this.workMode === 'unknown') {
       this.workMode = 'flat_rows';
+    } else if (this.workMode === 'spiral_rounds' || this.workMode === 'joined_rounds') {
+      // Transition from in-the-round cap into back-and-forth flat short-row flap (e.g. Hair neck flap!)
+      this.workMode = 'flat_rows';
+      const activeIds =
+        emittedRowIds && emittedRowIds.length > 0
+          ? emittedRowIds
+          : this.spiralQueue.map((q) => q.stitchId);
+      this.flatBoundary = activeIds.map((id) => ({
+        stitchId: id,
+        defaultSite: 'both_loops',
+      }));
+      this.flatDir = 1;
+      this.flatCursor = this.flatBoundary.length - 1;
     }
     if (emitChain) {
       this.emitStitch({
@@ -494,7 +516,14 @@ class PieceCompiler {
         }
 
         case 'turn_op': {
-          this.executeTurn(stmt.span, state.rowNumber, state.rowSourceLine, false, false);
+          this.executeTurn(
+            stmt.span,
+            state.rowNumber,
+            state.rowSourceLine,
+            false,
+            false,
+            state.emittedRowIds
+          );
           break;
         }
 
@@ -907,6 +936,36 @@ class PieceCompiler {
 
     // Case F: Standard sequential stitch operations (`10 sc`, `2 inc`, `dec`, `BLO sc`, `FPdc`)
     for (let iter = 0; iter < opIterations; iter++) {
+      // Auto-pivot onto the underside of the foundation chain when a foundation row continues past the left end chain
+      // without explicitly writing "working on opposite side of ch" (e.g. Legs Row 2 or Sword Blade Row 1)!
+      if (
+        this.workMode === 'flat_rows' &&
+        this.rowEdgeHistory.length === 0 &&
+        this.foundationIds.length >= 3 &&
+        this.flatDir === -1 &&
+        this.flatCursor < 0
+      ) {
+        this.workMode = 'spiral_rounds';
+        this.closedBottom = true;
+        this.spiralQueue = [];
+        const usableFoundation = this.foundationIds.filter(
+          (id) => !this.stitches[id].isTurningChain
+        );
+        const leftEndId = usableFoundation[0];
+        const countAtLeftEnd = state.emittedRowIds.filter((sid) =>
+          this.stitches[sid].anchors.some((a) => a.targetStitchId === leftEndId)
+        ).length;
+        // If 3+ stitches already fanned into the left end chain (e.g. "4 sc in the same stitch"),
+        // start underside at index 1; otherwise include index 0's underside (e.g. "inc x 2" at the turn).
+        const startUndersideIdx = countAtLeftEnd >= 3 ? 1 : 0;
+        for (const cid of usableFoundation.slice(startUndersideIdx)) {
+          this.spiralQueue.push({ stitchId: cid, site: 'chain_underside' });
+        }
+        for (const sid of state.emittedRowIds) {
+          this.spiralQueue.push({ stitchId: sid, site: 'both_loops' });
+        }
+      }
+
       if (this.workMode === 'spiral_rounds' || this.workMode === 'joined_rounds') {
         const anchors: StitchAnchor[] = [];
         for (let c = 0; c < stmt.consumePerStitch; c++) {

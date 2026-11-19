@@ -37,15 +37,54 @@ function slugifyPieceId(name: string, used: Set<string>): string {
 
 function mapStitchKind(rawToken: string, dialect: CrochetDialect): StitchKind | null {
   const t = rawToken.toLowerCase().trim();
-  if (t === 'ch' || t === 'chain' || t === 'chains' || t === 'chs') return 'ch';
-  if (t === 'sl st' || t === 'slst' || t === 'sl' || t === 'ss' || t === 'slip stitch' || t === 'slip') {
+  if (
+    t === 'ch' ||
+    t === 'chain' ||
+    t === 'chains' ||
+    t === 'chs' ||
+    t === 'cad' ||
+    t === 'cadena' ||
+    t === 'cadenas'
+  ) {
+    return 'ch';
+  }
+  if (
+    t === 'sl st' ||
+    t === 'slst' ||
+    t === 'sl' ||
+    t === 'ss' ||
+    t === 'slip stitch' ||
+    t === 'slip' ||
+    t === 'pd' ||
+    t === 'pe' ||
+    t === 'punto deslizado' ||
+    t === 'punto enano'
+  ) {
     return 'sl_st';
   }
-  if (t === 'mr' || t === 'mc' || t === 'magic ring' || t === 'magic circle') return 'magic_ring';
+  if (
+    t === 'mr' ||
+    t === 'mc' ||
+    t === 'magic ring' ||
+    t === 'magic circle' ||
+    t === 'am' ||
+    t === 'anillo magico' ||
+    t === 'anillo mágico'
+  ) {
+    return 'magic_ring';
+  }
   if (t === 'bobble' || t === 'bo' || t === 'mb') return 'bobble';
   if (t === 'puff' || t === 'pf') return 'puff';
   if (t === 'popcorn' || t === 'pc') return 'popcorn';
   if (t === 'cluster' || t === 'cl') return 'cluster';
+
+  // Spanish terms (supported in 'ES' dialect and auto-recognized when unambiguous)
+  if (t === 'pb' || t === 'mp' || t === 'punto bajo' || t === 'medio punto') return 'sc';
+  if (t === 'pma' || t === 'mpa' || t === 'punto medio alto' || t === 'medio punto alto') {
+    return 'hdc';
+  }
+  if (t === 'pa' || t === 'punto alto' || t === 'vareta') return 'dc';
+  if (t === 'pad' || t === 'punto alto doble' || t === 'vareta doble') return 'tr';
 
   if (dialect === 'UK') {
     // UK crochet terms are shifted by one step relative to US terms!
@@ -53,16 +92,15 @@ function mapStitchKind(rawToken: string, dialect: CrochetDialect): StitchKind | 
     if (t === 'htr' || t === 'half treble') return 'hdc';
     if (t === 'tr' || t === 'treble') return 'dc';
     if (t === 'dtr' || t === 'double treble') return 'tr';
-    // Fallback if user still wrote 'sc' or 'hdc'
     if (t === 'sc') return 'sc';
     if (t === 'hdc') return 'hdc';
     return null;
   }
 
   // US crochet terms (Craft Yarn Council standard)
-  if (t === 'sc' || t === 'single crochet') return 'sc';
+  if (t === 'sc' || t === 'single crochet' || t === 'single crochets') return 'sc';
   if (t === 'hdc' || t === 'half double crochet' || t === 'half double') return 'hdc';
-  if (t === 'dc' || t === 'double crochet') return 'dc';
+  if (t === 'dc' || t === 'double crochet' || t === 'double crochets') return 'dc';
   if (t === 'tr' || t === 'trc' || t === 'treble' || t === 'triple crochet') return 'tr';
   return null;
 }
@@ -81,7 +119,12 @@ function classifyMilestoneLine(trimmed: string): MilestoneAnnotation['kind'] | n
   if (/^(fasten\s+off|fo\b|cut\s+yarn|weave\s+in|finish\s+off|tie\s+off)\b/.test(lower)) {
     return 'fasten_off';
   }
-  if (/^(note:|assembly:|tip:)\b/.test(lower)) {
+  if (
+    /^(?:note|assembly|tip)\s*:/i.test(lower) ||
+    /^(?:close\s+off|close\s+and\s+sew|sew\s+the|hide\s+the\s+tail|all\s+that['’]s\s+left|for\s+the\s+second\s+leg|the\s+little\s+belly|the\s+belt\s+is\s+sewn)\b/i.test(
+      lower,
+    )
+  ) {
     return 'note';
   }
   return null;
@@ -324,24 +367,42 @@ function parseTargetSuffix(
   let working = clause.trim();
   let siteOverride: AttachmentSite | undefined;
 
-  // Detect BLO / FLO / front loop / back loop suffix or prefix
-  if (/\bin\s+(?:the\s+)?back\s+loops?\s+only\b|\bin\s+blo\b/i.test(working)) {
+  // Detect BLO / FLO / PHT / PHD / front loop / back loop suffix or prefix
+  if (/\bin\s+(?:the\s+)?back\s+loops?\s+only\b|\bin\s+(?:blo|pht)\b|\bpor\s+hebra\s+trasera\b/i.test(working)) {
     siteOverride = 'blo';
-    working = working.replace(/\bin\s+(?:the\s+)?back\s+loops?\s+only\b|\bin\s+blo\b/gi, '').trim();
-  } else if (/\bin\s+(?:the\s+)?front\s+loops?\s+only\b|\bin\s+flo\b/i.test(working)) {
+    working = working
+      .replace(/\bin\s+(?:the\s+)?back\s+loops?\s+only\b|\bin\s+(?:blo|pht)\b|\bpor\s+hebra\s+trasera\b/gi, '')
+      .trim();
+  } else if (
+    /\bin\s+(?:the\s+)?front\s+loops?\s+only\b|\bin\s+(?:flo|phd)\b|\bpor\s+hebra\s+delantera\b/i.test(
+      working
+    )
+  ) {
     siteOverride = 'flo';
-    working = working.replace(/\bin\s+(?:the\s+)?front\s+loops?\s+only\b|\bin\s+flo\b/gi, '').trim();
+    working = working
+      .replace(
+        /\bin\s+(?:the\s+)?front\s+loops?\s+only\b|\bin\s+(?:flo|phd)\b|\bpor\s+hebra\s+delantera\b/gi,
+        ''
+      )
+      .trim();
   }
 
-  // Magic ring
-  if (/\bin\s+(?:a\s+)?(?:magic\s+ring|magic\s+circle|mr|mc|ring)\b/i.test(working)) {
+  // Magic ring (English & Spanish)
+  if (
+    /\bin\s+(?:a\s+)?(?:magic\s+ring|magic\s+circle|mr|mc|ring)\b|\ben\s+(?:un\s+)?(?:anillo\s+m[aá]gico|am)\b/i.test(
+      working
+    )
+  ) {
     const core = working
-      .replace(/\bin\s+(?:a\s+)?(?:magic\s+ring|magic\s+circle|mr|mc|ring)\b/gi, '')
+      .replace(
+        /\bin\s+(?:a\s+)?(?:magic\s+ring|magic\s+circle|mr|mc|ring)\b|\ben\s+(?:un\s+)?(?:anillo\s+m[aá]gico|am)\b/gi,
+        ''
+      )
       .trim();
     return { core, target: { kind: 'magic_ring' }, siteOverride };
   }
 
-  // From hook: "in 2nd ch from hook", "in third chain from hook"
+  // From hook: "in 2nd ch from hook", "Starting in 2nd chain from hook: inc", "28 sc starting in 2nd chain from hook"
   const ordMap: Record<string, number> = {
     '1st': 1,
     first: 1,
@@ -354,13 +415,13 @@ function parseTargetSuffix(
     '5th': 5,
     fifth: 5,
   };
-  const fromHookMatch = working.match(
-    /\bin\s+(?:the\s+)?(\d+(?:st|nd|rd|th)?|first|second|third|fourth|fifth)\s+(?:ch|chain)\s+from\s+(?:the\s+)?hook\b/i
-  );
+  const fromHookRegex =
+    /(?:starting\s+)?\bin\s+(?:the\s+)?(\d+(?:st|nd|rd|th)?|first|second|third|fourth|fifth)\s+(?:ch|chain|cad|cadena)\s+from\s+(?:the\s+)?hook\s*:?\s*/i;
+  const fromHookMatch = working.match(fromHookRegex);
   if (fromHookMatch) {
     const rawOrd = fromHookMatch[1].toLowerCase();
     const offset = ordMap[rawOrd] ?? parseInt(rawOrd, 10) ?? 2;
-    const core = working.slice(0, fromHookMatch.index).trim();
+    const core = working.replace(fromHookRegex, ' ').trim();
     return { core, target: { kind: 'from_hook', offset }, siteOverride };
   }
 
@@ -389,17 +450,16 @@ function parseTargetSuffix(
     };
   }
 
-  // Same / single stitch fan: "in same st", "in last ch", "in first st", "in next st" (when count > 1)
+  // Same / single stitch fan: "in same st", "in last ch", "in first st", "in the sc stitch", "in the last single crochet stitch", "in the next"
   const inSingleMatch = working.match(
-    /\bin\s+(?:the\s+)?(?:same|last|first|next)\s*(?:st|stitch|ch|chain)\b/i
+    /\bin\s+(?:the\s+)?(?:same|last|first|next|sc|single\s+crochet|last\s+single\s+crochet)\s*(?:st|stitch|ch|chain)?\b/i
   );
   if (inSingleMatch) {
     const whichWord = inSingleMatch[0].toLowerCase();
     const core = working.slice(0, inSingleMatch.index).trim();
-    // Note: "sc in next st" (count 1) is normal next_each, whereas "3 sc in next st" or "in same st" or "in last ch" is same_stitch!
     const leadingNum = core.match(/^(\d+)\b/);
     const isMulti = leadingNum && Number(leadingNum[1]) > 1;
-    if (isMulti || /same|last/.test(whichWord)) {
+    if (isMulti || /same|last|sc|single/.test(whichWord)) {
       return { core, target: { kind: 'same_stitch' }, siteOverride };
     }
     return { core, target: { kind: 'next_each' }, siteOverride };
@@ -479,9 +539,9 @@ function parseStatementList(
       continue;
     }
 
-    // 2.5 Leading Loop-Mode or Color Prefix before groups/clauses (e.g. "BLO [sc, dec] x 3", "FLO *2 sc, inc* around")
+    // 2.5 Leading Loop-Mode or Color Prefix before groups/clauses (e.g. "BLO [sc, dec] x 3", "FLO: (sc, inc) x 4", "PHT: (pb, dism) x 4")
     const loopPrefixMatch = rawClause.match(
-      /^(?:in\s+)?(?:(blo|back\s+loops?\s+only)|(flo|front\s+loops?\s+only))[\s:]+(.+)$/i
+      /^(?:in\s+)?(?:(blo|pht|back\s+loops?\s+only|por\s+hebra\s+trasera)|(flo|phd|front\s+loops?\s+only|por\s+hebra\s+delantera))[\s:]+(.+)$/i
     );
     if (loopPrefixMatch) {
       const site: AttachmentSite = loopPrefixMatch[1] ? 'blo' : 'flo';
@@ -492,7 +552,7 @@ function parseStatementList(
     }
 
     const ccGroupPrefixMatch = rawClause.match(
-      /^(?:cc\s*:?\s*(?:to\s+)?|change\s+(?:color\s+)?to\s+|switch\s+to\s+)([#a-z0-9_-]+)\s*:\s*(.+)$/i
+      /^(?:cc\s*:?\s*(?:to\s+)?|change\s+(?:colou?r\s+)?to\s+|switch\s+to\s+|colou?r\s*:\s*)([#a-z0-9\s_-]+?)\s*:\s*(.+)$/i
     );
     if (ccGroupPrefixMatch) {
       const resolved = resolveYarnColor(ccGroupPrefixMatch[1], '');
@@ -567,6 +627,9 @@ function parseStatementList(
       } else if (/^in\s+/i.test(suffix)) {
         const parsedTarget = parseTargetSuffix(`sc ${suffix}`);
         sharedTarget = parsedTarget.target;
+      } else if (suffix === '' && clauses.length === 1 && innerBody.length >= 2) {
+        // e.g. "11. (3 sc, dec) (12)" where the author omitted "x 3" on a full-round repeat!
+        times = 'around_or_end';
       }
 
       statements.push({
@@ -611,9 +674,9 @@ function parseStatementList(
       let part = subRaw.trim();
       if (!part) continue;
 
-      // Color change prefix: "CC: to grey", "CC brown", "change to gold", "with green:"
+      // Color change prefix: "CC: to grey", "CC: Green", "Change colour to White", "Colour: Golden Brown"
       const ccMatch = part.match(
-        /^(?:cc\s*:?\s*(?:to\s+)?|change\s+(?:color\s+)?to\s+|switch\s+to\s+|with\s+color\s+|color\s*:\s*)([#a-z0-9\s_-]+?)(?:[:,]\s*(.*))?$/i
+        /^(?:cc\s*:?\s*(?:to\s+)?|change\s+(?:colou?r\s+)?to\s+|switch\s+to\s+|with\s+colou?r\s+|colou?r\s*:\s*)([#a-z0-9\s_-]+?)(?:[:,]\s*(.*))?$/i
       );
       if (ccMatch) {
         const colorCandidate = ccMatch[1].trim();
@@ -707,12 +770,12 @@ function parseStatementList(
         continue;
       }
 
-      // Standalone BLO / FLO mode switch for rest of row: "BLO" or "FLO"
-      if (/^(?:blo|back\s+loops?\s+only)$/i.test(part)) {
+      // Standalone BLO / FLO / PHT / PHD mode switch for rest of row
+      if (/^(?:blo|pht|back\s+loops?\s+only|por\s+hebra\s+trasera)$/i.test(part)) {
         statements.push({ type: 'loop_mode_op', site: 'blo', span });
         continue;
       }
-      if (/^(?:flo|front\s+loops?\s+only)$/i.test(part)) {
+      if (/^(?:flo|phd|front\s+loops?\s+only|por\s+hebra\s+delantera)$/i.test(part)) {
         statements.push({ type: 'loop_mode_op', site: 'flo', span });
         continue;
       }
@@ -721,14 +784,26 @@ function parseStatementList(
       const { core, target, siteOverride } = parseTargetSuffix(part);
       part = core.trim();
 
-      // Prefix loop modifier: "BLO 6 sc", "FLO sc", "FPdc", "BPdc"
+      // Prefix loop modifier: "BLO 6 sc", "FLO sc", "PHT 6 pb", "FPdc", "BPdc"
       let site: AttachmentSite = siteOverride ?? 'both_loops';
-      if (/^(?:blo|back\s+loop\s+only)\s+/i.test(part)) {
+      if (/^(?:blo|pht|back\s+loop\s+only|por\s+hebra\s+trasera)\s+/i.test(part)) {
         site = 'blo';
-        part = part.replace(/^(?:blo|back\s+loop\s+only)\s+/i, '').trim();
-      } else if (/^(?:flo|front\s+loop\s+only)\s+/i.test(part)) {
+        part = part.replace(/^(?:blo|pht|back\s+loop\s+only|por\s+hebra\s+trasera)\s+/i, '').trim();
+      } else if (/^(?:flo|phd|front\s+loop\s+only|por\s+hebra\s+delantera)\s+/i.test(part)) {
         site = 'flo';
-        part = part.replace(/^(?:flo|front\s+loop\s+only)\s+/i, '').trim();
+        part = part.replace(/^(?:flo|phd|front\s+loop\s+only|por\s+hebra\s+delantera)\s+/i, '').trim();
+      }
+
+      // Support "<token> x <N>" (e.g. "inc x 2", "dec x 6", "aum x 6", "dism x 6")
+      const trailingMultMatch = part.match(/^([a-z\s]+?)\s*[x×*]\s*(\d+)$/i);
+      if (trailingMultMatch) {
+        part = `${trailingMultMatch[2]} ${trailingMultMatch[1].trim()}`;
+      }
+
+      // Support prose like "Make 12 sc in each leg for a total of 24 sc" -> extract total "24 sc"
+      const totalOfMatch = part.match(/\btotal\s+of\s+(\d+\s*[a-z]+)/i);
+      if (totalOfMatch) {
+        part = totalOfMatch[1].trim();
       }
 
       // Normalize spaceless count+token like "4sc", "2inc", "6dec", "3fpdc", "12ch"
@@ -743,8 +818,10 @@ function parseStatementList(
         }
       }
 
-      // Also support "ch 10" or "chain 6" where count comes AFTER stitch name!
-      const stitchFirstCountMatch = tokenPart.match(/^(ch|chain|sc|hdc|dc|tr|inc|dec)\s+(\d+)$/i);
+      // Also support "ch 10", "Chain 7", "cad 7" where count comes AFTER stitch name!
+      const stitchFirstCountMatch = tokenPart.match(
+        /^(ch|chain|cad|cadenas|sc|pb|hdc|pma|dc|pa|tr|inc|aum|dec|dism)\s+(\d+)$/i
+      );
       if (stitchFirstCountMatch && explicitCount === null) {
         tokenPart = stitchFirstCountMatch[1];
         explicitCount = Number(stitchFirstCountMatch[2]);
@@ -759,8 +836,10 @@ function parseStatementList(
         tokenPart = tokenPart.replace(/^(?:bp|back\s+post\s*)/i, '').trim();
       }
 
-      // Increases: "inc", "sc inc", "hdc inc", "dc inc"
-      const incMatch = tokenPart.match(/^(?:(sc|hdc|dc|tr)\s+)?inc(?:rease)?s?$/i);
+      // Increases: "inc", "Increase", "sc inc", "aum", "aumento"
+      const incMatch = tokenPart.match(
+        /^(?:(sc|pb|hdc|pma|dc|pa|tr)\s+)?(?:inc(?:rease)?s?|aum(?:ento)?s?)$/i
+      );
       if (incMatch) {
         const baseKind = incMatch[1] ? (mapStitchKind(incMatch[1], dialect) ?? 'sc') : 'sc';
         statements.push({
@@ -776,9 +855,14 @@ function parseStatementList(
         continue;
       }
 
-      // Decreases: "dec", "invdec", "inv dec", "sc2tog", "sc3tog", "dc2tog", "hdc2tog"
-      const togMatch = tokenPart.match(/^(sc|hdc|dc|tr)(\d+)tog$/i);
-      if (togMatch || /^(?:(?:inv|invisible|sc|hdc|dc)?\s*dec(?:rease)?s?)$/i.test(tokenPart)) {
+      // Decreases: "dec", "invdec", "sc2tog", "dism", "disminución"
+      const togMatch = tokenPart.match(/^(sc|pb|hdc|pma|dc|pa|tr)(\d+)tog$/i);
+      if (
+        togMatch ||
+        /^(?:(?:inv|invisible|sc|pb|hdc|pma|dc|pa)?\s*(?:dec(?:rease)?s?|dism(?:inuci[oó]n)?(?:es)?))$/i.test(
+          tokenPart
+        )
+      ) {
         let baseKind: StitchKind = 'sc';
         let together = 2;
         if (togMatch) {
@@ -1153,8 +1237,38 @@ export function parsePattern(rawText: string, options: ParseOptions = {}): Patte
       }
     }
 
-    // 4. Standalone CC: / Border: lines without a row number!
-    //    e.g. "CC: to grey, sc a border around and do 2 sc at the corners"
+    // 4. Standalone Colour / CC: / Border: lines without a row number!
+    //    e.g. "Colour: Golden Brown", "Change colour to White", "CC: to grey, sc a border around and do 2 sc at the corners"
+    const standaloneColorMatch = trimmed.match(
+      /^(?:colou?r\s*:\s*|change\s+colou?r\s+to\s+|cc\s*:\s*(?:to\s+)?)([#a-z0-9\s_-]+)$/i
+    );
+    if (standaloneColorMatch) {
+      const resolved = resolveYarnColor(standaloneColorMatch[1].trim(), '');
+      if (resolved) {
+        const piece = ensurePiece(lineNum);
+        if (piece.rows.length === 0) {
+          piece.initialColorHex = resolved;
+        } else {
+          piece.rows.push({
+            rowNumber: piece.rows[piece.rows.length - 1].rowNumber,
+            explicitModeHint: 'auto',
+            declaredCount: null,
+            statements: [
+              {
+                type: 'color_op',
+                colorHex: resolved,
+                colorName: standaloneColorMatch[1].trim(),
+                span: { line: lineNum, colStart: 1, colEnd: trimmed.length + 1 },
+              },
+            ],
+            sourceLine: lineNum,
+            rawHeader: 'Color Change',
+          });
+        }
+        continue;
+      }
+    }
+
     if (/^(?:cc|border|edging)\s*:/i.test(trimmed)) {
       const piece = ensurePiece(lineNum);
       const nextRowNum =

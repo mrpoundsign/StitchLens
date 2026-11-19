@@ -101,6 +101,8 @@ export function resolveYarnColor(raw: string, fallback = '#38BDF8'): string {
   }
   if (cleaned === 'dark brown') return '#5C2C16';
   if (cleaned === 'light brown') return '#B07D52';
+  if (cleaned === 'golden brown') return '#B45309';
+  if (cleaned === 'skin tone' || cleaned === 'skin' || cleaned === 'flesh') return '#FDBA74';
   if (cleaned === 'dark green') return '#15803D';
   if (cleaned === 'light blue') return '#7DD3FC';
   if (cleaned === 'dark grey' || cleaned === 'dark gray') return '#475569';

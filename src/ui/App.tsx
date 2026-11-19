@@ -69,6 +69,7 @@ export function App() {
   const dialectSelectId = useId();
   const colorModeSelectId = useId();
   const pinPieceSelectId = useId();
+  const soloPieceSelectId = useId();
 
   const galleryModal = useLightDismissDialog();
   const guideModal = useLightDismissDialog();
@@ -651,6 +652,7 @@ export function App() {
               >
                 <option value="US">US Terms (sc / dc)</option>
                 <option value="UK">UK Terms (dc / tr)</option>
+                <option value="ES">ES Terms (pb / pa / aum)</option>
               </select>
             </div>
 
@@ -764,9 +766,27 @@ export function App() {
           <div className="row-outline">
             <h2 className="row-outline-title">
               Live Row &amp; Stitch Counts ({totalStitches} total loops)
+              {soloPieceId && (
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    fontSize: '0.68rem',
+                    paddingBlock: '0.05rem',
+                    paddingInline: '0.4rem',
+                    minBlockSize: '1.35rem',
+                    marginInlineStart: '0.45rem',
+                  }}
+                  onClick={() => setSoloPieceId(null)}
+                >
+                  Show All Pieces
+                </button>
+              )}
             </h2>
             <ul className="row-pill-list" role="list">
-              {compiled.rows.map((row, idx) => {
+              {compiled.rows
+                .filter((row) => !soloPieceId || row.pieceId === soloPieceId)
+                .map((row, idx) => {
                 const isCurrent =
                   activeStitch !== null &&
                   activeStitch.id >= row.firstStitchId &&
@@ -826,24 +846,93 @@ export function App() {
           <div className="viewport-top-hud">
             {/* Piece Switcher & Interactive 3D Click-to-Pin */}
             <div className="hud-card">
-              <button
-                type="button"
-                className={`btn ${soloPieceId === null ? 'btn-active' : ''}`}
-                onClick={() => setSoloPieceId(null)}
-              >
-                All Pieces ({compiled.pieces.length})
-              </button>
-              {compiled.pieces.length > 1 &&
-                compiled.pieces.map((p) => (
+              {compiled.pieces.length <= 4 ? (
+                <>
                   <button
-                    key={p.id}
                     type="button"
-                    className={`btn ${soloPieceId === p.id ? 'btn-active' : ''}`}
-                    onClick={() => setSoloPieceId(p.id)}
+                    className={`btn ${soloPieceId === null ? 'btn-active' : ''}`}
+                    onClick={() => setSoloPieceId(null)}
                   >
-                    {p.name}
+                    All Pieces ({compiled.pieces.length})
                   </button>
-                ))}
+                  {compiled.pieces.length > 1 &&
+                    compiled.pieces.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className={`btn ${soloPieceId === p.id ? 'btn-active' : ''}`}
+                        onClick={() => {
+                          setSoloPieceId(p.id);
+                          const lastId = p.stitchIds[p.stitchIds.length - 1];
+                          if (lastId !== undefined) setCurrentStep(lastId);
+                        }}
+                      >
+                        {p.name}
+                      </button>
+                    ))}
+                </>
+              ) : (
+                <>
+                  <label htmlFor={soloPieceSelectId} className="visually-hidden">
+                    Select piece to inspect
+                  </label>
+                  <select
+                    id={soloPieceSelectId}
+                    className="select-compact"
+                    value={soloPieceId ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value || null;
+                      setSoloPieceId(val);
+                      if (val) {
+                        const p = compiled.pieces.find((item) => item.id === val);
+                        const lastId = p?.stitchIds[p.stitchIds.length - 1];
+                        if (lastId !== undefined) setCurrentStep(lastId);
+                      } else {
+                        setCurrentStep(999999);
+                      }
+                    }}
+                  >
+                    <option value="">All Pieces ({compiled.pieces.length} in Kit Grid)</option>
+                    {compiled.pieces.map((p, idx) => (
+                      <option key={p.id} value={p.id}>
+                        Piece {idx + 1}: {p.name} ({p.stitchIds.length} sts)
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      const curIdx = compiled.pieces.findIndex((p) => p.id === soloPieceId);
+                      const prevIdx =
+                        curIdx <= 0 ? compiled.pieces.length - 1 : curIdx - 1;
+                      const p = compiled.pieces[prevIdx];
+                      setSoloPieceId(p.id);
+                      const lastId = p.stitchIds[p.stitchIds.length - 1];
+                      if (lastId !== undefined) setCurrentStep(lastId);
+                    }}
+                    aria-label="Previous piece"
+                  >
+                    &lsaquo; Piece
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      const curIdx = compiled.pieces.findIndex((p) => p.id === soloPieceId);
+                      const nextIdx =
+                        curIdx < 0 || curIdx >= compiled.pieces.length - 1 ? 0 : curIdx + 1;
+                      const p = compiled.pieces[nextIdx];
+                      setSoloPieceId(p.id);
+                      const lastId = p.stitchIds[p.stitchIds.length - 1];
+                      if (lastId !== undefined) setCurrentStep(lastId);
+                    }}
+                    aria-label="Next piece"
+                  >
+                    Piece &rsaquo;
+                  </button>
+                </>
+              )}
 
               {compiled.pieces.length > 1 && (
                 <>
