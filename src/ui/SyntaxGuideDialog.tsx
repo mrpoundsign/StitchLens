@@ -74,16 +74,20 @@ export function SyntaxGuideDialog({ dialogRef }: Props) {
         <h3>3. Comments &amp; Non-Instruction Notes</h3>
         <ul>
           <li>
-            <strong>Ignored Comments:</strong> Start any line with <code>#</code> or{' '}
-            <code>//</code> (e.g. <code># Hook: 4.0mm, worsted yarn</code>), or add an inline
-            comment at the end of a row (<code>7. 10 sc (10) // straight sides</code>)—StitchLens
-            ignores them completely.
+            <strong>Freeform Prose Notes:</strong> Any line that doesn&rsquo;t start with a row/round
+            number, piece header (<code>Name:</code>), or color/assembly command is automatically
+            parsed as a comment/craft note—so you can type freeform notes and reminders anywhere!
           </li>
           <li>
-            <strong>Timeline Craft Milestones:</strong> Start a line with <code>Note: ...</code>,{' '}
-            <code>Tip: ...</code>, <code>Embroider...</code>, <code>Stuff...</code>, or{' '}
-            <code>Fasten off</code> to display it as a helpful callout card in the 3D scrubber when
-            you reach that step.
+            <strong>Explicit Comments:</strong> You can also start any line with <code>#</code> or{' '}
+            <code>//</code> (e.g. <code># Hook: 4.0mm, worsted yarn</code>), or add an inline
+            comment at the end of a row (<code>7. 10 sc (10) // straight sides</code>).
+          </li>
+          <li>
+            <strong>Timeline Craft Milestones:</strong> Lines starting with <code>Note: ...</code>,{' '}
+            <code>Tip: ...</code>, <code>Embroider...</code>, <code>Stuff...</code>,{' '}
+            <code>Fasten off</code>, or freeform notes appear as helpful callout cards in the 3D
+            scrubber when you reach that step.
           </li>
         </ul>
 

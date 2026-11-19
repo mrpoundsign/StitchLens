@@ -1352,22 +1352,16 @@ export function parsePattern(rawText: string, options: ParseOptions = {}): Patte
       continue;
     }
 
-    // 6. Fallback: bare unnumbered stitch line (e.g. user typed "ch 12" on line 1 without "Row 1:")
+    // 6. Fallback: any unrecognized line beginning (no row/round number, no header colon, no color/border/directive)
+    //    is treated as a freeform comment/note so pattern authors can write natural prose notes anywhere without syntax prefixes.
     const piece = ensurePiece(lineNum);
-    const { cleanedBody, declaredCount } = extractDeclaredCount(trimmed);
-    const statements = parseStatementList(cleanedBody, lineNum, 0, dialect, diagnostics);
-    if (statements.length > 0) {
-      const nextNum =
-        piece.rows.length > 0 ? piece.rows[piece.rows.length - 1].rowNumber + 1 : 1;
-      piece.rows.push({
-        rowNumber: nextNum,
-        explicitModeHint: 'auto',
-        declaredCount,
-        statements,
-        sourceLine: lineNum,
-        rawHeader: `Step ${nextNum}`,
-      });
-    }
+    piece.annotations.push({
+      pieceId: piece.id,
+      kind: 'note',
+      text: trimmed,
+      sourceLine: lineNum,
+      afterRowIndex: piece.rows.length - 1,
+    });
   }
 
   return {

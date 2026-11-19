@@ -100,6 +100,7 @@ export interface RowSummary {
 export interface PieceSummary {
   id: string;
   name: string;
+  sourceLine: number;
   workMode: PieceWorkMode;
   stuffed: boolean;
   closedBottom: boolean;

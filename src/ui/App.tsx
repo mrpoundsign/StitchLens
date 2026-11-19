@@ -18,6 +18,7 @@ import { decodeShareHash, encodeShareHash } from '../utils/shareCodec';
 import type { SimWorkerRequest, SimWorkerResponse } from '../workers/sim.worker';
 import { ExampleGalleryDialog } from './ExampleGalleryDialog';
 import { SyntaxGuideDialog } from './SyntaxGuideDialog';
+import { highlightPatternLine } from './syntaxHighlight';
 import { useLightDismissDialog } from './useLightDismissDialog';
 
 const SITE_LABELS: Record<AttachmentSite, string> = {
@@ -32,6 +33,31 @@ const SITE_LABELS: Record<AttachmentSite, string> = {
   ring_center: 'center of Magic Ring',
 };
 
+const STORAGE_KEY_PATTERN = 'stitchlens.currentPattern.v1';
+const STORAGE_KEY_DIALECT = 'stitchlens.currentDialect.v1';
+
+function loadInitialPatternFromStorage(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return localStorage.getItem(STORAGE_KEY_PATTERN) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function loadInitialDialectFromStorage(): CrochetDialect {
+  if (typeof window === 'undefined') return 'US';
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_DIALECT);
+    if (saved === 'US' || saved === 'UK' || saved === 'ES') {
+      return saved;
+    }
+    return 'US';
+  } catch {
+    return 'US';
+  }
+}
+
 function detectDarkTheme(): boolean {
   if (typeof document === 'undefined') return true;
   const meta = document.querySelector('meta[name="color-scheme"]')?.getAttribute('content');
@@ -41,10 +67,9 @@ function detectDarkTheme(): boolean {
 }
 
 export function App() {
-  const defaultExample = EXAMPLE_PATTERNS[0];
-  const [activeExampleId, setActiveExampleId] = useState<string>(defaultExample.id);
-  const [patternText, setPatternText] = useState<string>(defaultExample.patternText);
-  const [dialect, setDialect] = useState<CrochetDialect>(defaultExample.dialect);
+  const [activeExampleId, setActiveExampleId] = useState<string>('custom');
+  const [patternText, setPatternText] = useState<string>(loadInitialPatternFromStorage);
+  const [dialect, setDialect] = useState<CrochetDialect>(loadInitialDialectFromStorage);
 
   const [viewMode, setViewMode] = useState<RenderViewMode>('yarn');
   const [colorMode, setColorMode] = useState<ColorSchemeMode>('yarn');
@@ -78,6 +103,8 @@ export function App() {
   const editorPaneRef = useRef<HTMLElement | null>(null);
   const viewportRef = useRef<CrochetViewport | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const highlightBackdropRef = useRef<HTMLPreElement | null>(null);
+  const lineGutterRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const sliderRef = useRef<HTMLInputElement | null>(null);
   const workerRef = useRef<Worker | null>(null);
@@ -120,6 +147,23 @@ export function App() {
       });
     }
   }, []);
+
+  // Persist current sketch & dialect in localStorage so reloading resumes right where you left off
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_PATTERN, patternText);
+    } catch {
+      // Ignore storage block
+    }
+  }, [patternText]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_DIALECT, dialect);
+    } catch {
+      // Ignore storage block
+    }
+  }, [dialect]);
 
   // Listen to OS color-scheme changes
   useEffect(() => {
@@ -169,18 +213,49 @@ export function App() {
     };
   }, [compiled, pinningPieceId, showToast]);
 
+  const onPieceClickRef = useRef<(clickedPieceId: string) => void>(() => {});
+  useEffect(() => {
+    onPieceClickRef.current = (clickedPieceId: string) => {
+      setIsPlaying(false);
+      setSoloPieceId(clickedPieceId);
+      const p = compiled.pieces.find((item) => item.id === clickedPieceId);
+      const lastId = p?.stitchIds[p.stitchIds.length - 1];
+      if (lastId !== undefined) {
+        setCurrentStep(lastId);
+      }
+      if (p) {
+        jumpEditorToLine(p.sourceLine);
+      }
+    };
+  }, [compiled]);
+
   const totalStitches = compiled.stitches.length;
-  const clampedStep = Math.max(0, Math.min(Math.max(0, totalStitches - 1), currentStep));
+  const soloPieceObj = useMemo(
+    () => (soloPieceId ? compiled.pieces.find((p) => p.id === soloPieceId) ?? null : null),
+    [compiled.pieces, soloPieceId]
+  );
+  const scopeMinStep =
+    soloPieceObj && soloPieceObj.stitchIds.length > 0 ? soloPieceObj.stitchIds[0] : 0;
+  const scopeMaxStep =
+    soloPieceObj && soloPieceObj.stitchIds.length > 0
+      ? soloPieceObj.stitchIds[soloPieceObj.stitchIds.length - 1]
+      : Math.max(0, totalStitches - 1);
+  const scopeTotalStitches =
+    soloPieceObj && soloPieceObj.stitchIds.length > 0
+      ? soloPieceObj.stitchIds.length
+      : totalStitches;
+
+  const clampedStep = Math.max(scopeMinStep, Math.min(scopeMaxStep, currentStep));
+  const displayStepInScope = scopeTotalStitches > 0 ? clampedStep - scopeMinStep + 1 : 0;
 
   // Sync CSS custom properties on `<input type="range">` for cross-browser filled-track progress
   useEffect(() => {
     const slider = sliderRef.current;
     if (!slider) return;
-    const maxVal = Math.max(0, totalStitches - 1);
-    slider.style.setProperty('--attr-min', '0');
-    slider.style.setProperty('--attr-max', String(Math.max(1, maxVal)));
+    slider.style.setProperty('--attr-min', String(scopeMinStep));
+    slider.style.setProperty('--attr-max', String(Math.max(scopeMinStep + 1, scopeMaxStep)));
     slider.style.setProperty('--control-value', String(clampedStep));
-  }, [clampedStep, totalStitches]);
+  }, [clampedStep, scopeMinStep, scopeMaxStep]);
 
   // Initialize Three.js Viewport once
   useEffect(() => {
@@ -201,6 +276,9 @@ export function App() {
       },
       (clickedStitchId) => {
         onStitchClickRef.current(clickedStitchId);
+      },
+      (clickedPieceId) => {
+        onPieceClickRef.current(clickedPieceId);
       }
     );
     viewportRef.current = vp;
@@ -251,11 +329,16 @@ export function App() {
     }
   }, [compiled, stuffingOverride]);
 
+  const prevStitchCountRef = useRef<number>(compiled.stitches.length);
+
   // Push new pattern + geometry into Three.js Viewport
   useEffect(() => {
     const vp = viewportRef.current;
     if (!vp || geometry.positions.length !== compiled.stitches.length * 3) return;
-    const shouldFit = needsCameraFitRef.current;
+    const transitionedFromEmpty =
+      prevStitchCountRef.current === 0 && compiled.stitches.length > 0;
+    prevStitchCountRef.current = compiled.stitches.length;
+    const shouldFit = needsCameraFitRef.current || transitionedFromEmpty;
     needsCameraFitRef.current = false;
     vp.setData(
       compiled,
@@ -302,16 +385,16 @@ export function App() {
     if (!isPlaying) return;
     const timer = window.setInterval(() => {
       setCurrentStep((prev) => {
-        const cur = Math.min(prev, totalStitches - 1);
-        if (cur >= totalStitches - 1) {
+        const cur = Math.max(scopeMinStep, Math.min(prev, scopeMaxStep));
+        if (cur >= scopeMaxStep) {
           setIsPlaying(false);
-          return Math.max(0, totalStitches - 1);
+          return scopeMaxStep;
         }
         return cur + 1;
       });
     }, 110);
     return () => window.clearInterval(timer);
-  }, [isPlaying, totalStitches]);
+  }, [isPlaying, scopeMinStep, scopeMaxStep]);
 
   // Global keyboard arrow shortcuts when focus isn't inside the pattern textarea
   useEffect(() => {
@@ -321,16 +404,20 @@ export function App() {
       if (e.key === 'ArrowRight') {
         e.preventDefault();
         setIsPlaying(false);
-        setCurrentStep((s) => Math.min(totalStitches - 1, Math.min(s, totalStitches - 1) + 1));
+        setCurrentStep((s) =>
+          Math.min(scopeMaxStep, Math.max(scopeMinStep, Math.min(s, scopeMaxStep)) + 1)
+        );
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
         setIsPlaying(false);
-        setCurrentStep((s) => Math.max(0, Math.min(s, totalStitches - 1) - 1));
+        setCurrentStep((s) =>
+          Math.max(scopeMinStep, Math.max(scopeMinStep, Math.min(s, scopeMaxStep)) - 1)
+        );
       } else if (e.key === ' ') {
         e.preventDefault();
         setIsPlaying((p) => {
-          if (!p && clampedStep >= totalStitches - 1) {
-            setCurrentStep(0);
+          if (!p && clampedStep >= scopeMaxStep) {
+            setCurrentStep(scopeMinStep);
           }
           return !p;
         });
@@ -338,7 +425,7 @@ export function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [clampedStep, totalStitches]);
+  }, [clampedStep, scopeMinStep, scopeMaxStep]);
 
   const activeStitch = compiled.stitches[clampedStep] ?? null;
   const activePiece = useMemo(
@@ -367,17 +454,22 @@ export function App() {
     );
   }, [compiled.annotations, activeStitch]);
 
+  const scopedRows = useMemo(
+    () => compiled.rows.filter((r) => !soloPieceId || r.pieceId === soloPieceId),
+    [compiled.rows, soloPieceId]
+  );
+
   const stepByRow = (delta: -1 | 1) => {
     setIsPlaying(false);
-    if (compiled.rows.length === 0) return;
-    const curRowIdx = compiled.rows.findIndex(
+    if (scopedRows.length === 0) return;
+    const curRowIdx = scopedRows.findIndex(
       (r) => clampedStep >= r.firstStitchId && clampedStep <= r.lastStitchId
     );
     const nextIdx = Math.max(
       0,
-      Math.min(compiled.rows.length - 1, (curRowIdx >= 0 ? curRowIdx : 0) + delta)
+      Math.min(scopedRows.length - 1, (curRowIdx >= 0 ? curRowIdx : 0) + delta)
     );
-    setCurrentStep(compiled.rows[nextIdx].lastStitchId);
+    setCurrentStep(scopedRows[nextIdx].lastStitchId);
   };
 
   const handleSelectExample = (ex: ExamplePattern) => {
@@ -515,11 +607,50 @@ export function App() {
     const lineLen = lines[lineNum - 1]?.length ?? 0;
     ta.focus();
     ta.setSelectionRange(offset, offset + lineLen);
+
+    const lineHeightPx = parseFloat(window.getComputedStyle(ta).lineHeight) || 21.3;
+    const targetTop = Math.max(0, (lineNum - 1) * lineHeightPx - ta.clientHeight * 0.32);
+    ta.scrollTop = targetTop;
+    syncEditorScroll();
   };
 
   const sliderAriaText = activeStitch
-    ? `Stitch ${clampedStep + 1} of ${totalStitches}: ${activePiece?.name ?? 'Piece'}, ${activeRow?.label ?? `Row ${activeStitch.rowNumber}`}, ${activeStitch.label}`
+    ? `Stitch ${displayStepInScope} of ${scopeTotalStitches}: ${activePiece?.name ?? 'Piece'}, ${activeRow?.label ?? `Row ${activeStitch.rowNumber}`}, ${activeStitch.label}`
     : 'No stitches compiled';
+
+  const highlightedLines = useMemo(
+    () => patternText.split('\n').map((line, idx) => highlightPatternLine(line, idx)),
+    [patternText]
+  );
+
+  const lineSeverityMap = useMemo(() => {
+    const map = new Map<number, 'error' | 'warning' | 'info'>();
+    for (const d of compiled.diagnostics) {
+      const existing = map.get(d.line);
+      if (
+        !existing ||
+        d.severity === 'error' ||
+        (d.severity === 'warning' && existing === 'info')
+      ) {
+        map.set(d.line, d.severity);
+      }
+    }
+    return map;
+  }, [compiled.diagnostics]);
+
+  const syncEditorScroll = () => {
+    const ta = textareaRef.current;
+    const pre = highlightBackdropRef.current;
+    const gutter = lineGutterRef.current;
+    if (!ta) return;
+    if (pre) {
+      pre.scrollTop = ta.scrollTop;
+      pre.scrollLeft = ta.scrollLeft;
+    }
+    if (gutter) {
+      gutter.scrollTop = ta.scrollTop;
+    }
+  };
 
   const startColResize = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -711,45 +842,87 @@ export function App() {
             </div>
           </div>
 
-          <textarea
-            ref={textareaRef}
-            className="pattern-textarea"
-            aria-label="Crochet pattern instructions"
-            spellCheck={false}
-            autoCapitalize="off"
-            autoComplete="off"
-            autoCorrect="off"
-            value={patternText}
-            onDragOver={(e) => {
-              e.preventDefault();
-            }}
-            onDrop={(e) => {
-              const file = e.dataTransfer?.files?.[0];
-              if (file && (file.name.toLowerCase().endsWith('.txt') || file.type === 'text/plain')) {
-                e.preventDefault();
-                void loadTxtFile(file);
+          <div className="editor-highlight-stack">
+            <div
+              ref={lineGutterRef}
+              className="pattern-line-gutter"
+              aria-hidden="true"
+            >
+              {highlightedLines.map((_, idx) => {
+                const lineNum = idx + 1;
+                const sev = lineSeverityMap.get(lineNum);
+                return (
+                  <span
+                    key={lineNum}
+                    className={`gutter-line-num ${sev ? `gutter-line-diag-${sev}` : ''}`}
+                  >
+                    {lineNum}
+                  </span>
+                );
+              })}
+            </div>
+            <pre
+              ref={highlightBackdropRef}
+              className="pattern-highlight-backdrop"
+              aria-hidden="true"
+            >
+              {highlightedLines.map((node, idx) => (
+                <div key={idx}>{node}</div>
+              ))}
+            </pre>
+            <textarea
+              ref={textareaRef}
+              className="pattern-textarea"
+              aria-label="Crochet pattern instructions"
+              placeholder={
+                'Paste or type a crochet pattern here, drop a .txt file, or click "Examples (11 CC0)" above...\n\nExample:\nHead [tan]:\n1. 6 sc in a magic ring (6)\n2. 6 inc (12)\n3. (sc, inc) x 6 (18)'
               }
-            }}
-            onChange={(e) => {
-              setActiveExampleId('custom');
-              setPatternText(e.target.value);
-            }}
-          />
+              spellCheck={false}
+              autoCapitalize="off"
+              autoComplete="off"
+              autoCorrect="off"
+              value={patternText}
+              onScroll={syncEditorScroll}
+              onDragOver={(e) => {
+                e.preventDefault();
+              }}
+              onDrop={(e) => {
+                const file = e.dataTransfer?.files?.[0];
+                if (
+                  file &&
+                  (file.name.toLowerCase().endsWith('.txt') || file.type === 'text/plain')
+                ) {
+                  e.preventDefault();
+                  void loadTxtFile(file);
+                }
+              }}
+              onChange={(e) => {
+                setActiveExampleId('custom');
+                setPatternText(e.target.value);
+              }}
+            />
+          </div>
 
           {compiled.diagnostics.length > 0 && (
             <div className="diagnostics-strip" role="status" aria-live="polite">
               {compiled.diagnostics.map((d, idx) => (
-                <div key={`${d.line}-${idx}`} className={`diag-item diag-${d.severity}`}>
+                <button
+                  key={`${d.line}-${idx}`}
+                  type="button"
+                  className={`diag-item diag-${d.severity}`}
+                  onClick={() => jumpEditorToLine(d.line)}
+                  title={`Click to jump to Line ${d.line}`}
+                >
                   <span>
                     {d.severity === 'error'
                       ? 'Mismatch'
                       : d.severity === 'warning'
                         ? 'Note'
                         : 'Hint'}{' '}
-                    (L{d.line}):
+                    (Line {d.line}):
                   </span>
                   <span>{d.message}</span>
-                </div>
+                </button>
               ))}
             </div>
           )}
@@ -765,7 +938,9 @@ export function App() {
 
           <div className="row-outline">
             <h2 className="row-outline-title">
-              Live Row &amp; Stitch Counts ({totalStitches} total loops)
+              {soloPieceObj
+                ? `${soloPieceObj.name} (${scopeTotalStitches} loops)`
+                : `Live Row & Stitch Counts (${totalStitches} total loops)`}
               {soloPieceId && (
                 <button
                   type="button"
@@ -777,51 +952,85 @@ export function App() {
                     minBlockSize: '1.35rem',
                     marginInlineStart: '0.45rem',
                   }}
-                  onClick={() => setSoloPieceId(null)}
+                  onClick={() => {
+                    setSoloPieceId(null);
+                    setCurrentStep(999999);
+                  }}
                 >
                   Show All Pieces
                 </button>
               )}
             </h2>
             <ul className="row-pill-list" role="list">
-              {compiled.rows
-                .filter((row) => !soloPieceId || row.pieceId === soloPieceId)
-                .map((row, idx) => {
-                const isCurrent =
-                  activeStitch !== null &&
-                  activeStitch.id >= row.firstStitchId &&
-                  activeStitch.id <= row.lastStitchId;
-                const pieceObj = compiled.pieces.find((p) => p.id === row.pieceId);
-                const hasMismatch =
-                  row.declaredCount !== null &&
-                  compiled.diagnostics.some(
-                    (d) => d.severity === 'error' && d.line === row.sourceLine
-                  );
+              {(soloPieceObj ? [soloPieceObj] : compiled.pieces).map((piece) => {
+                const pieceRows = compiled.rows.filter((r) => r.pieceId === piece.id);
+                const firstStitchColor =
+                  compiled.stitches[piece.stitchIds[0]]?.colorHex ?? '#38bdf8';
 
                 return (
-                  <li key={`${row.pieceId}-${row.rowNumber}-${idx}`}>
-                    <button
-                      type="button"
-                      className={`row-pill ${isCurrent ? 'row-pill-current' : ''}`}
-                      onClick={() => {
-                        setIsPlaying(false);
-                        setCurrentStep(row.lastStitchId);
-                        jumpEditorToLine(row.sourceLine);
-                      }}
-                    >
-                      <span>
-                        {compiled.pieces.length > 1 && pieceObj ? (
-                          <strong style={{ marginInlineEnd: '0.35rem' }}>{pieceObj.name}:</strong>
-                        ) : null}
-                        {row.label}
-                        {row.implicitTurn && <span className="implicit-badge">auto turn</span>}
-                      </span>
-                      <span className={`count-chip ${hasMismatch ? 'count-chip-mismatch' : ''}`}>
-                        {hasMismatch
-                          ? `${row.emittedStitchCount} != (${row.declaredCount})`
-                          : `${row.emittedStitchCount} sts`}
-                      </span>
-                    </button>
+                  <li key={piece.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.22rem' }}>
+                    {compiled.pieces.length > 1 && (
+                      <button
+                        type="button"
+                        className="piece-group-header"
+                        onClick={() => {
+                          setIsPlaying(false);
+                          if (soloPieceId === piece.id) {
+                            setSoloPieceId(null);
+                            setCurrentStep(999999);
+                          } else {
+                            setSoloPieceId(piece.id);
+                            const lastId = piece.stitchIds[piece.stitchIds.length - 1];
+                            if (lastId !== undefined) setCurrentStep(lastId);
+                          }
+                          jumpEditorToLine(piece.sourceLine);
+                        }}
+                      >
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span
+                            className="color-dot"
+                            style={{ backgroundColor: firstStitchColor }}
+                            aria-hidden="true"
+                          />
+                          <span>{piece.name}</span>
+                        </span>
+                        <span className="count-chip">{piece.stitchIds.length} sts</span>
+                      </button>
+                    )}
+                    {pieceRows.map((row, idx) => {
+                      const isCurrent =
+                        activeStitch !== null &&
+                        activeStitch.id >= row.firstStitchId &&
+                        activeStitch.id <= row.lastStitchId;
+                      const hasMismatch =
+                        row.declaredCount !== null &&
+                        compiled.diagnostics.some(
+                          (d) => d.severity === 'error' && d.line === row.sourceLine
+                        );
+
+                      return (
+                        <button
+                          key={`${row.pieceId}-${row.rowNumber}-${idx}`}
+                          type="button"
+                          className={`row-pill ${isCurrent ? 'row-pill-current' : ''}`}
+                          onClick={() => {
+                            setIsPlaying(false);
+                            setCurrentStep(row.lastStitchId);
+                            jumpEditorToLine(row.sourceLine);
+                          }}
+                        >
+                          <span>
+                            {row.label}
+                            {row.implicitTurn && <span className="implicit-badge">auto turn</span>}
+                          </span>
+                          <span className={`count-chip ${hasMismatch ? 'count-chip-mismatch' : ''}`}>
+                            {hasMismatch
+                              ? `${row.emittedStitchCount} != (${row.declaredCount})`
+                              : `${row.emittedStitchCount} sts`}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </li>
                 );
               })}
@@ -851,7 +1060,10 @@ export function App() {
                   <button
                     type="button"
                     className={`btn ${soloPieceId === null ? 'btn-active' : ''}`}
-                    onClick={() => setSoloPieceId(null)}
+                    onClick={() => {
+                      setSoloPieceId(null);
+                      setCurrentStep(999999);
+                    }}
                   >
                     All Pieces ({compiled.pieces.length})
                   </button>
@@ -867,7 +1079,7 @@ export function App() {
                           if (lastId !== undefined) setCurrentStep(lastId);
                         }}
                       >
-                        {p.name}
+                        {p.name} ({p.stitchIds.length} sts)
                       </button>
                     ))}
                 </>
@@ -1042,7 +1254,8 @@ export function App() {
                 </span>
               </div>
               <p className="spotlight-main">
-                Stitch {clampedStep + 1} of {totalStitches}: <code>{activeStitch.label}</code>
+                Stitch {displayStepInScope} of {scopeTotalStitches}
+                {soloPieceObj ? ` (${soloPieceObj.name})` : ''}: <code>{activeStitch.label}</code>
               </p>
               <p className="spotlight-sub">
                 {activeStitch.anchors.length === 0 ? (
@@ -1106,9 +1319,9 @@ export function App() {
             className="btn"
             onClick={() => {
               setIsPlaying(false);
-              setCurrentStep(0);
+              setCurrentStep(scopeMinStep);
             }}
-            disabled={clampedStep <= 0}
+            disabled={clampedStep <= scopeMinStep}
             aria-label="Jump to first stitch"
           >
             |&laquo;
@@ -1118,7 +1331,7 @@ export function App() {
             type="button"
             className="btn"
             onClick={() => stepByRow(-1)}
-            disabled={clampedStep <= 0}
+            disabled={clampedStep <= scopeMinStep}
           >
             &minus;Row
           </button>
@@ -1128,9 +1341,9 @@ export function App() {
             className="btn"
             onClick={() => {
               setIsPlaying(false);
-              setCurrentStep(Math.max(0, clampedStep - 1));
+              setCurrentStep(Math.max(scopeMinStep, clampedStep - 1));
             }}
-            disabled={clampedStep <= 0}
+            disabled={clampedStep <= scopeMinStep}
           >
             &larr; Stitch
           </button>
@@ -1139,8 +1352,8 @@ export function App() {
             type="button"
             className="btn btn-primary"
             onClick={() => {
-              if (!isPlaying && clampedStep >= totalStitches - 1) {
-                setCurrentStep(0);
+              if (!isPlaying && clampedStep >= scopeMaxStep) {
+                setCurrentStep(scopeMinStep);
               }
               setIsPlaying((p) => !p);
             }}
@@ -1153,9 +1366,9 @@ export function App() {
             className="btn"
             onClick={() => {
               setIsPlaying(false);
-              setCurrentStep(Math.min(totalStitches - 1, clampedStep + 1));
+              setCurrentStep(Math.min(scopeMaxStep, clampedStep + 1));
             }}
-            disabled={clampedStep >= totalStitches - 1}
+            disabled={clampedStep >= scopeMaxStep}
           >
             Stitch &rarr;
           </button>
@@ -1164,7 +1377,7 @@ export function App() {
             type="button"
             className="btn"
             onClick={() => stepByRow(1)}
-            disabled={clampedStep >= totalStitches - 1}
+            disabled={clampedStep >= scopeMaxStep}
           >
             +Row
           </button>
@@ -1174,9 +1387,9 @@ export function App() {
             className="btn"
             onClick={() => {
               setIsPlaying(false);
-              setCurrentStep(Math.max(0, totalStitches - 1));
+              setCurrentStep(scopeMaxStep);
             }}
-            disabled={clampedStep >= totalStitches - 1}
+            disabled={clampedStep >= scopeMaxStep}
             aria-label="Jump to finished piece"
           >
             &raquo;|
@@ -1192,8 +1405,8 @@ export function App() {
             id={sliderId}
             type="range"
             className="stitch-slider"
-            min={0}
-            max={Math.max(0, totalStitches - 1)}
+            min={scopeMinStep}
+            max={scopeMaxStep}
             step={1}
             value={clampedStep}
             aria-valuetext={sliderAriaText}
@@ -1203,7 +1416,9 @@ export function App() {
             }}
           />
           <span className="slider-readout">
-            {totalStitches > 0 ? `${clampedStep + 1} / ${totalStitches}` : '0 / 0'}
+            {scopeTotalStitches > 0
+              ? `${displayStepInScope} / ${scopeTotalStitches}`
+              : '0 / 0'}
           </span>
         </div>
 

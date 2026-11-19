@@ -325,18 +325,164 @@
     gap: 0.35rem;
   }
 
-  .pattern-textarea {
+  .editor-highlight-stack {
+    position: relative;
     flex: 1 1 0;
-    inline-size: 100%;
     min-block-size: 120px;
-    resize: none;
-    border: 0;
-    padding: 0.85rem;
+    inline-size: 100%;
+    overflow: hidden;
     background-color: var(--bg-surface);
-    color: var(--text-primary);
+  }
+
+  .pattern-line-gutter {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    inline-size: 3.1rem;
+    margin: 0;
+    padding-block: 0.85rem 2.75rem;
+    padding-inline: 0.35rem 0.45rem;
+    border-inline-end: 1px solid var(--border-ui);
+    background-color: var(--bg-subtle);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.55;
+    text-align: end;
+    user-select: none;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .gutter-line-num {
+    display: block;
+    block-size: calc(0.86rem * 1.55);
+  }
+
+  .gutter-line-diag-error {
+    color: #ef4444;
+    font-weight: 700;
+  }
+
+  .gutter-line-diag-warning {
+    color: #f59e0b;
+    font-weight: 700;
+  }
+
+  .gutter-line-diag-info {
+    color: var(--brand-accent);
+    font-weight: 700;
+  }
+
+  .pattern-highlight-backdrop,
+  .pattern-textarea {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 3.1rem;
+    inset-inline-end: 0;
+    inline-size: calc(100% - 3.1rem);
+    block-size: 100%;
+    margin: 0;
+    padding-block: 0.85rem 2.75rem;
+    padding-inline: 0.85rem;
+    border: 0;
     font-family: var(--font-mono);
     font-size: 0.86rem;
     line-height: 1.55;
+    tab-size: 2;
+    white-space: pre;
+    overflow: auto;
+  }
+
+  .pattern-highlight-backdrop {
+    pointer-events: none;
+    color: var(--text-primary);
+    user-select: none;
+    overflow: hidden;
+  }
+
+  .pattern-textarea {
+    resize: none;
+    background: transparent;
+    color: transparent;
+    caret-color: var(--text-primary);
+  }
+
+  .pattern-textarea::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.75;
+  }
+
+  .pattern-textarea::selection {
+    background-color: color-mix(in srgb, var(--brand-accent) 28%, transparent);
+    color: transparent;
+  }
+
+  /* Syntax Highlighting Tokens */
+  .syn-comment {
+    color: var(--text-secondary);
+    font-style: italic;
+  }
+
+  .syn-piece-header {
+    color: light-dark(#b45309, #fbbf24);
+    font-weight: 700;
+  }
+
+  .syn-row-num {
+    color: var(--brand-accent);
+    font-weight: 700;
+  }
+
+  .syn-stitch {
+    color: light-dark(#0369a1, #7dd3fc);
+    font-weight: 600;
+  }
+
+  .syn-modifier {
+    color: light-dark(#7e22ce, #c084fc);
+    font-weight: 600;
+  }
+
+  .syn-repeat {
+    color: light-dark(#be185d, #f472b6);
+    font-weight: 600;
+  }
+
+  .syn-keyword {
+    color: light-dark(#c2410c, #fb923c);
+    font-weight: 600;
+  }
+
+  .syn-count {
+    color: var(--brand-mint);
+    font-weight: 700;
+  }
+
+  .syn-directive {
+    color: light-dark(#047857, #34d399);
+    font-weight: 600;
+  }
+
+  .piece-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    inline-size: 100%;
+    padding: 0.28rem 0.55rem;
+    margin-block-start: 0.35rem;
+    border-radius: 0.38rem;
+    border: 1px solid var(--border-ui);
+    background-color: var(--bg-subtle);
+    color: var(--text-primary);
+    font-size: 0.76rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-align: start;
+  }
+
+  .piece-group-header:hover {
+    background-color: var(--bg-elevated);
   }
 
   .row-resizer {
@@ -367,7 +513,20 @@
     display: flex;
     align-items: baseline;
     gap: 0.4rem;
-    padding-block: 0.16rem;
+    padding-block: 0.22rem;
+    padding-inline: 0.35rem;
+    border-radius: 0.3rem;
+    border: 0;
+    background: transparent;
+    inline-size: 100%;
+    text-align: start;
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+  }
+
+  .diag-item:hover {
+    background-color: var(--bg-elevated);
   }
 
   .diag-error {

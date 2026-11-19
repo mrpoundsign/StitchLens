@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { compilePattern } from '../compiler/virtualHook';
 import { solveStitchGeometry } from '../physics/solver';
 import { EXAMPLE_PATTERNS } from '../../examples/catalog';
+import { highlightPatternLine } from '../../ui/syntaxHighlight';
 
 describe('StitchLens Core Compiler & XPBD 3D Geometry', () => {
   it('compiles the exact partial MS Word screenshot snippet (starting mid-pattern at Row 3!)', () => {
@@ -250,6 +251,70 @@ Rnd 2: 6 tr in each st around (6)
     const nonRing = compiled.stitches.filter((s) => s.kind !== 'magic_ring');
     expect(nonRing.slice(0, 6).every((s) => s.kind === 'sc')).toBe(true);
     expect(nonRing.slice(6, 12).every((s) => s.kind === 'dc')).toBe(true);
+  });
+
+  it('supports Spanish (ES) crochet dialect terms (pb, pa, pma, aum, dism, am)', () => {
+    const esPattern = `
+Cabeza:
+1. 6 pb en am (6)
+2. 6 aum (12)
+3. (pb, aum) x 6 (18)
+4. (pb, dism) x 6 (12)
+`;
+    const compiled = compilePattern(esPattern, { dialect: 'ES' });
+    expect(compiled.diagnostics).toEqual([]);
+    expect(compiled.pieces.length).toBe(1);
+    expect(compiled.pieces[0].stitchIds.length).toBe(1 + 6 + 12 + 18 + 12);
+  });
+
+  it('treats any line with an unrecognized beginning as a freeform comment/note with 0 warnings', () => {
+    const freeformPattern = `
+Legs (make 2):
+Colour: Golden Brown
+This is a completely freeform note without # or // or Note: prefix!
+1. Chain 7
+2. Starting in 2nd chain from hook: inc, 4sc, inc x 2, 4sc, inc (16)
+For the second leg, make 2 more sc and join to the first leg at stitch 10.
+Remember to hide the yarn tail inside the piece when done.
+`;
+    const compiled = compilePattern(freeformPattern);
+    const warningsOrErrors = compiled.diagnostics.filter(
+      (d) => d.severity === 'error' || d.severity === 'warning'
+    );
+    expect(warningsOrErrors).toEqual([]);
+    expect(compiled.pieces.length).toBe(1);
+    expect(compiled.pieces[0].stitchIds.length).toBe(7 + 16);
+    expect(compiled.annotations.length).toBe(3);
+    expect(compiled.annotations.every((a) => a.kind === 'note')).toBe(true);
+  });
+
+  it('partitions per-piece stitch ID ranges and syntax-highlights pattern lines', () => {
+    const multiPiece = `
+First Part:
+1. 6 sc in a magic ring (6)
+2. 6 inc (12)
+
+Second Part:
+1. 5 sc in a magic ring (5)
+Freeform reminder at the end
+`;
+    const compiled = compilePattern(multiPiece);
+    expect(compiled.pieces.length).toBe(2);
+    const [p1, p2] = compiled.pieces;
+    expect(p1.stitchIds.length).toBe(1 + 6 + 12);
+    expect(p2.stitchIds.length).toBe(1 + 5);
+    expect(p1.stitchIds[0]).toBe(0);
+    expect(p1.stitchIds[p1.stitchIds.length - 1]).toBe(18);
+    expect(p2.stitchIds[0]).toBe(19);
+    expect(p2.stitchIds[p2.stitchIds.length - 1]).toBe(24);
+
+    // Syntax highlighter classifies piece headers, numbered rows, and freeform comment lines
+    const headerNode = highlightPatternLine('First Part:', 0);
+    const rowNode = highlightPatternLine('1. 6 sc in a magic ring (6)', 1);
+    const freeformNode = highlightPatternLine('Freeform reminder at the end', 5);
+    expect(headerNode).toBeTruthy();
+    expect(rowNode).toBeTruthy();
+    expect(freeformNode).toBeTruthy();
   });
 });
 

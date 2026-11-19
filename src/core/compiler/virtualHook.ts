@@ -113,6 +113,7 @@ class PieceCompiler {
     return {
       id: this.piece.id,
       name: this.piece.name,
+      sourceLine: this.piece.sourceLine,
       workMode: this.workMode === 'unknown' ? 'flat_rows' : this.workMode,
       stuffed: inferredStuffed,
       closedBottom: this.closedBottom,

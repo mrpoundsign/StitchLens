@@ -88,10 +88,12 @@ export class CrochetViewport {
   private ghostGroup = new THREE.Group();
   private highlightGroup = new THREE.Group();
   private stemGroup = new THREE.Group();
+  private labelGroup = new THREE.Group();
   private gridHelper: THREE.GridHelper;
 
   private yarnBumpMap: THREE.CanvasTexture;
   private pickableStitchMap = new Map<THREE.Object3D, number>();
+  private pickablePieceMap = new Map<THREE.Object3D, string>();
   private raycaster = new THREE.Raycaster();
   private pointerDownPos = new THREE.Vector2();
 
@@ -99,6 +101,7 @@ export class CrochetViewport {
   private currentGeometry: SolvedGeometry | null = null;
   private settings: ViewportSettings;
   private onSelectStitch?: (stitchId: number) => void;
+  private onSelectPiece?: (pieceId: string) => void;
 
   private targetRingMeshes: THREE.Mesh[] = [];
   private hookIndicatorGroup: THREE.Group | null = null;
@@ -107,11 +110,13 @@ export class CrochetViewport {
   constructor(
     container: HTMLElement,
     initialSettings: ViewportSettings,
-    onSelectStitch?: (stitchId: number) => void
+    onSelectStitch?: (stitchId: number) => void,
+    onSelectPiece?: (pieceId: string) => void
   ) {
     this.container = container;
     this.settings = { ...initialSettings };
     this.onSelectStitch = onSelectStitch;
+    this.onSelectPiece = onSelectPiece;
 
     this.scene = new THREE.Scene();
     this.updateThemeColors(initialSettings.isDarkTheme);
@@ -160,6 +165,7 @@ export class CrochetViewport {
     this.rootGroup.add(this.solidGroup);
     this.rootGroup.add(this.ghostGroup);
     this.rootGroup.add(this.highlightGroup);
+    this.rootGroup.add(this.labelGroup);
     this.scene.add(this.rootGroup);
 
     this.yarnBumpMap = createTwistedYarnBumpTexture();
@@ -183,6 +189,7 @@ export class CrochetViewport {
     this.clearGroup(this.ghostGroup);
     this.clearGroup(this.highlightGroup);
     this.clearGroup(this.stemGroup);
+    this.clearGroup(this.labelGroup);
     this.yarnBumpMap.dispose();
     this.controls.dispose();
     this.renderer.dispose();
@@ -282,7 +289,6 @@ export class CrochetViewport {
   };
 
   private handlePointerUp = (e: PointerEvent): void => {
-    if (!this.onSelectStitch || this.pickableStitchMap.size === 0) return;
     const moveDist = Math.hypot(
       e.clientX - this.pointerDownPos.x,
       e.clientY - this.pointerDownPos.y
@@ -295,6 +301,21 @@ export class CrochetViewport {
       -((e.clientY - rect.top) / rect.height) * 2 + 1
     );
     this.raycaster.setFromCamera(ndc, this.camera);
+
+    // 1. Check floating 3D piece markers first when viewing All Pieces
+    if (this.onSelectPiece && this.pickablePieceMap.size > 0) {
+      const labelHits = this.raycaster.intersectObjects(this.labelGroup.children, true);
+      for (const hit of labelHits) {
+        const pieceId = this.pickablePieceMap.get(hit.object);
+        if (pieceId) {
+          this.onSelectPiece(pieceId);
+          return;
+        }
+      }
+    }
+
+    // 2. Check individual stitch meshes
+    if (!this.onSelectStitch || this.pickableStitchMap.size === 0) return;
     const hits = this.raycaster.intersectObjects(this.solidGroup.children, true);
     for (const hit of hits) {
       const stId = this.pickableStitchMap.get(hit.object);
@@ -336,11 +357,18 @@ export class CrochetViewport {
         if ((child as THREE.Mesh).geometry) {
           (child as THREE.Mesh).geometry.dispose();
         }
-        const mat = (child as THREE.Mesh).material;
+        const mat = (child as THREE.Mesh | THREE.Sprite).material;
+        const disposeMat = (m: THREE.Material) => {
+          const spriteMat = m as THREE.SpriteMaterial;
+          if (spriteMat.map && spriteMat.map !== this.yarnBumpMap) {
+            spriteMat.map.dispose();
+          }
+          m.dispose();
+        };
         if (Array.isArray(mat)) {
-          mat.forEach((m) => m.dispose());
+          mat.forEach(disposeMat);
         } else if (mat) {
-          mat.dispose();
+          disposeMat(mat);
         }
       });
     }
@@ -407,7 +435,9 @@ export class CrochetViewport {
     this.clearGroup(this.ghostGroup);
     this.clearGroup(this.highlightGroup);
     this.clearGroup(this.stemGroup);
+    this.clearGroup(this.labelGroup);
     this.pickableStitchMap.clear();
+    this.pickablePieceMap.clear();
     this.targetRingMeshes = [];
     this.hookIndicatorGroup = null;
 
@@ -437,14 +467,27 @@ export class CrochetViewport {
 
     const maxStep = Math.max(0, Math.min(pattern.stitches.length - 1, this.settings.currentStep));
 
+    const soloPiece = this.settings.soloPieceId
+      ? pattern.pieces.find((p) => p.id === this.settings.soloPieceId) ?? null
+      : null;
+    const scopeEndId =
+      soloPiece && soloPiece.stitchIds.length > 0
+        ? soloPiece.stitchIds[soloPiece.stitchIds.length - 1]
+        : pattern.stitches.length - 1;
+    const isScrubbingMidPattern = maxStep < scopeEndId;
+
     if (this.settings.viewMode === 'yarn') {
-      this.buildPlushYarnScene(pattern, geom, maxStep);
+      this.buildPlushYarnScene(pattern, geom, maxStep, isScrubbingMidPattern);
     } else {
       this.buildDiagramScene(pattern, geom, maxStep);
     }
 
-    // 2. Build Active Stitch Halo + Target Parent Loop Ring(s) + 3D Hook Vector when scrubbing mid-pattern!
-    const isScrubbingMidPattern = maxStep < pattern.stitches.length - 1;
+    // 2. When viewing All Pieces on a multi-piece pattern, render floating 3D piece markers with stitch counts!
+    if (!this.settings.soloPieceId && pattern.pieces.length > 1) {
+      this.buildPieceMarkers(pattern, geom);
+    }
+
+    // 3. Build Active Stitch Halo + Target Parent Loop Ring(s) + 3D Hook Vector when scrubbing mid-pattern!
     const activeStitch = pattern.stitches[maxStep];
     if (
       isScrubbingMidPattern &&
@@ -461,11 +504,11 @@ export class CrochetViewport {
   private buildPlushYarnScene(
     pattern: CompiledPattern,
     geom: SolvedGeometry,
-    maxStep: number
+    maxStep: number,
+    isScrubbingMidPattern: boolean
   ): void {
     const yarnRadius = 0.16;
     const ghostPoints: THREE.Vector3[] = [];
-    const isScrubbingMidPattern = maxStep < pattern.stitches.length - 1;
 
     for (let i = 0; i < pattern.stitches.length; i++) {
       const st = pattern.stitches[i];
@@ -724,6 +767,115 @@ export class CrochetViewport {
     }
 
     flushWorkingPath();
+  }
+
+  private buildPieceMarkers(pattern: CompiledPattern, geom: SolvedGeometry): void {
+    const isDark = this.settings.isDarkTheme;
+    for (const piece of pattern.pieces) {
+      if (piece.stitchIds.length === 0) continue;
+
+      const box = new THREE.Box3();
+      for (const stId of piece.stitchIds) {
+        box.expandByPoint(this.getVec3(geom.positions, stId));
+      }
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+
+      const firstSt = pattern.stitches[piece.stitchIds[0]];
+      const dotColor = firstSt?.colorHex ?? '#38bdf8';
+      const titleText = piece.name;
+      const countText = `${piece.stitchIds.length} sts`;
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const fontTitle = '700 26px Inter, -apple-system, BlinkMacSystemFont, sans-serif';
+      const fontCount = '600 22px "JetBrains Mono", Consolas, monospace';
+
+      let wTitle = titleText.length * 15;
+      let wCount = countText.length * 13;
+      if (ctx) {
+        ctx.font = fontTitle;
+        wTitle = ctx.measureText(titleText).width;
+        ctx.font = fontCount;
+        wCount = ctx.measureText(countText).width;
+      }
+
+      const padX = 24;
+      const dotSpace = 28;
+      const gap = 16;
+      const pillW = Math.ceil(padX * 2 + dotSpace + wTitle + gap + wCount + 22);
+      const pillH = 60;
+      canvas.width = pillW;
+      canvas.height = pillH;
+
+      if (ctx) {
+        // Outer rounded pill background
+        const r = 28;
+        ctx.beginPath();
+        ctx.roundRect(2, 2, pillW - 4, pillH - 4, r);
+        ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.94)';
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = isDark ? '#334155' : '#cbd5e1';
+        ctx.stroke();
+
+        // Yarn color dot
+        ctx.beginPath();
+        ctx.arc(padX + 8, pillH / 2, 9, 0, Math.PI * 2);
+        ctx.fillStyle = dotColor;
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.6)' : 'rgba(15,23,42,0.35)';
+        ctx.stroke();
+
+        // Piece title
+        ctx.font = fontTitle;
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = isDark ? '#f8fafc' : '#0f172a';
+        ctx.fillText(titleText, padX + dotSpace, pillH / 2 + 1);
+
+        // Stitch count chip
+        const chipX = padX + dotSpace + wTitle + gap - 6;
+        const chipW = wCount + 20;
+        const chipH = 36;
+        ctx.beginPath();
+        ctx.roundRect(chipX, (pillH - chipH) / 2, chipW, chipH, 18);
+        ctx.fillStyle = isDark ? 'rgba(52, 211, 153, 0.16)' : 'rgba(5, 150, 105, 0.12)';
+        ctx.fill();
+
+        ctx.font = fontCount;
+        ctx.fillStyle = isDark ? '#34d399' : '#059669';
+        ctx.fillText(countText, chipX + 10, pillH / 2 + 1);
+      }
+
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const spriteMat = new THREE.SpriteMaterial({
+        map: tex,
+        transparent: true,
+        depthTest: false,
+      });
+      const sprite = new THREE.Sprite(spriteMat);
+      const markerY = box.max.y + 1.35;
+      sprite.position.set(center.x, markerY, center.z);
+      const scaleH = 1.05;
+      sprite.scale.set((pillW / pillH) * scaleH, scaleH, 1);
+      sprite.renderOrder = 10;
+
+      this.pickablePieceMap.set(sprite, piece.id);
+      this.labelGroup.add(sprite);
+
+      // Subtle vertical stem line connecting the floating marker down to the top of the piece
+      const stemTop = new THREE.Vector3(center.x, markerY - scaleH * 0.48, center.z);
+      const stemBottom = new THREE.Vector3(center.x, box.max.y + 0.18, center.z);
+      const stemGeo = new THREE.BufferGeometry().setFromPoints([stemBottom, stemTop]);
+      const stemMat = new THREE.LineBasicMaterial({
+        color: isDark ? 0x64748b : 0x94a3b8,
+        transparent: true,
+        opacity: 0.55,
+      });
+      this.labelGroup.add(new THREE.Line(stemGeo, stemMat));
+    }
   }
 
   private buildActiveStitchSpotlight(activeStitch: StitchNode, geom: SolvedGeometry): void {
