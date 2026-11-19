@@ -1,6 +1,6 @@
 {
   "name": "stitchlens",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "private": true,
   "description": "Interactive 3D Crochet Pattern Visualizer, Live Scratchpad & Stitch-Graph Debugger",
   "license": "AGPL-3.0-only",

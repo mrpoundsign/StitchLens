@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
   AttachmentSite,
   CompiledPattern,
@@ -314,14 +315,37 @@ export class CrochetViewport {
       }
     }
 
-    // 2. Check individual stitch meshes
-    if (!this.onSelectStitch || this.pickableStitchMap.size === 0) return;
+    // 2. Check individual stitch meshes (or nearest stitch on a merged color-batch mesh!)
+    if (!this.onSelectStitch) return;
     const hits = this.raycaster.intersectObjects(this.solidGroup.children, true);
-    for (const hit of hits) {
-      const stId = this.pickableStitchMap.get(hit.object);
-      if (stId !== undefined) {
-        this.onSelectStitch(stId);
-        break;
+    if (hits.length > 0) {
+      const firstHit = hits[0];
+      const directStId = this.pickableStitchMap.get(firstHit.object);
+      if (directStId !== undefined) {
+        this.onSelectStitch(directStId);
+        return;
+      }
+      if (this.currentPattern && this.currentGeometry) {
+        const pt = firstHit.point;
+        const maxStep = Math.max(
+          0,
+          Math.min(this.currentPattern.stitches.length - 1, this.settings.currentStep)
+        );
+        let bestId = -1;
+        let bestDistSq = Infinity;
+        for (let i = 0; i <= maxStep; i++) {
+          const st = this.currentPattern.stitches[i];
+          if (this.settings.soloPieceId && st.pieceId !== this.settings.soloPieceId) continue;
+          const sp = this.getVec3(this.currentGeometry.positions, i);
+          const dSq = sp.distanceToSquared(pt);
+          if (dSq < bestDistSq) {
+            bestDistSq = dSq;
+            bestId = st.id;
+          }
+        }
+        if (bestId >= 0) {
+          this.onSelectStitch(bestId);
+        }
       }
     }
   };
@@ -509,6 +533,31 @@ export class CrochetViewport {
   ): void {
     const yarnRadius = 0.16;
     const ghostPoints: THREE.Vector3[] = [];
+    const ghostLineVertices: number[] = [];
+
+    // Group tube geometries by material key (`hex` or `hex:current`) so 6,000+ tubes merge into ~8 WebGL draw calls!
+    const batches = new Map<
+      string,
+      {
+        color: THREE.Color;
+        isCurrent: boolean;
+        geos: THREE.BufferGeometry[];
+      }
+    >();
+
+    const addGeoToBatch = (
+      color: THREE.Color,
+      isCurrent: boolean,
+      tubeGeo: THREE.BufferGeometry
+    ) => {
+      const key = isCurrent ? `${color.getHexString()}:cur` : color.getHexString();
+      let batch = batches.get(key);
+      if (!batch) {
+        batch = { color: color.clone(), isCurrent, geos: [] };
+        batches.set(key, batch);
+      }
+      batch.geos.push(tubeGeo);
+    };
 
     for (let i = 0; i < pattern.stitches.length; i++) {
       const st = pattern.stitches[i];
@@ -520,31 +569,17 @@ export class CrochetViewport {
           ghostPoints.push(pos);
           if (st.prevStitchId !== null && pattern.stitches[st.prevStitchId]?.pieceId === st.pieceId) {
             const pPrev = this.getVec3(geom.positions, st.prevStitchId);
-            const lineGeo = new THREE.BufferGeometry().setFromPoints([pPrev, pos]);
-            const lineMat = new THREE.LineBasicMaterial({
-              color: 0x94a3b8,
-              transparent: true,
-              opacity: 0.18,
-            });
-            this.ghostGroup.add(new THREE.Line(lineGeo, lineMat));
+            ghostLineVertices.push(pPrev.x, pPrev.y, pPrev.z, pos.x, pos.y, pos.z);
           }
         }
         continue;
       }
 
       if (st.kind === 'magic_ring') {
-        const ringGeo = new THREE.TorusGeometry(0.36, 0.11, 10, 24);
+        const ringGeo = new THREE.TorusGeometry(0.36, 0.11, 8, 18);
         ringGeo.rotateX(Math.PI / 2);
-        const ringMat = new THREE.MeshStandardMaterial({
-          color: this.resolveStitchColor(st, 1.0),
-          roughness: 0.82,
-          bumpMap: this.yarnBumpMap,
-          bumpScale: 0.04,
-        });
-        const mesh = new THREE.Mesh(ringGeo, ringMat);
-        mesh.position.copy(pos);
-        this.pickableStitchMap.set(mesh, st.id);
-        this.solidGroup.add(mesh);
+        ringGeo.translate(pos.x, pos.y, pos.z);
+        addGeoToBatch(this.resolveStitchColor(st, 1.0), false, ringGeo);
         continue;
       }
 
@@ -553,19 +588,9 @@ export class CrochetViewport {
       const isCurrent = isScrubbingMidPattern && i === maxStep;
       const baseColor = this.resolveStitchColor(st, geom.stress[i]);
 
-      const mat = new THREE.MeshStandardMaterial({
-        color: baseColor,
-        emissive: isCurrent ? baseColor.clone().multiplyScalar(0.38) : new THREE.Color(0x000000),
-        roughness: 0.84,
-        metalness: 0.02,
-        bumpMap: this.yarnBumpMap,
-        bumpScale: 0.055,
-      });
-
       // 1. Watertight Closed Top V-Loop Ring (`closed = true` -> zero open hollow ends, interlocks with neighbors!)
       const halfW = st.isTurningChain ? 0.36 : 0.54;
       const loopSpread = st.kind === 'ch' ? 0.16 : 0.21;
-      // Subtle alternating twist on chains so chain links interlock visually like real crochet chains
       const chainTwist = st.kind === 'ch' ? ((i % 2 === 0 ? 1 : -1) * 0.06) : 0;
       const pBack = pos
         .clone()
@@ -584,16 +609,14 @@ export class CrochetViewport {
       );
       const capGeo = new THREE.TubeGeometry(
         capCurve,
-        16,
+        12,
         st.kind === 'bobble' || st.kind === 'puff' || st.kind === 'popcorn'
           ? yarnRadius * 1.4
           : yarnRadius,
-        8,
+        6,
         true
       );
-      const capMesh = new THREE.Mesh(capGeo, mat);
-      this.pickableStitchMap.set(capMesh, st.id);
-      this.solidGroup.add(capMesh);
+      addGeoToBatch(baseColor, isCurrent, capGeo);
 
       // 2. Watertight Closed Post Loop reaching down through the exact parent attachment site(s)!
       if (st.anchors.length > 0) {
@@ -623,10 +646,8 @@ export class CrochetViewport {
             ],
             true
           );
-          const postGeo = new THREE.TubeGeometry(postCurve, 16, yarnRadius * 0.88, 7, true);
-          const postMesh = new THREE.Mesh(postGeo, mat);
-          this.pickableStitchMap.set(postMesh, st.id);
-          this.solidGroup.add(postMesh);
+          const postGeo = new THREE.TubeGeometry(postCurve, 12, yarnRadius * 0.88, 6, true);
+          addGeoToBatch(baseColor, isCurrent, postGeo);
         }
       }
 
@@ -646,12 +667,42 @@ export class CrochetViewport {
             [prevPos, midBridge, pos, midBridge.clone().addScaledVector(normal, 0.04)],
             true
           );
-          const linkGeo = new THREE.TubeGeometry(linkCurve, 10, yarnRadius * 0.72, 6, true);
-          const linkMesh = new THREE.Mesh(linkGeo, mat);
-          this.pickableStitchMap.set(linkMesh, st.id);
-          this.solidGroup.add(linkMesh);
+          const linkGeo = new THREE.TubeGeometry(linkCurve, 8, yarnRadius * 0.72, 5, true);
+          addGeoToBatch(baseColor, isCurrent, linkGeo);
         }
       }
+    }
+
+    // Merge each color batch into a single BufferGeometry + Mesh!
+    for (const batch of batches.values()) {
+      if (batch.geos.length === 0) continue;
+      const merged = mergeGeometries(batch.geos, false);
+      for (const g of batch.geos) {
+        g.dispose();
+      }
+      if (!merged) continue;
+      const mat = new THREE.MeshStandardMaterial({
+        color: batch.color,
+        emissive: batch.isCurrent
+          ? batch.color.clone().multiplyScalar(0.38)
+          : new THREE.Color(0x000000),
+        roughness: 0.84,
+        metalness: 0.02,
+        bumpMap: this.yarnBumpMap,
+        bumpScale: 0.055,
+      });
+      this.solidGroup.add(new THREE.Mesh(merged, mat));
+    }
+
+    if (ghostLineVertices.length > 0) {
+      const lineGeo = new THREE.BufferGeometry();
+      lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(ghostLineVertices, 3));
+      const lineMat = new THREE.LineBasicMaterial({
+        color: 0x94a3b8,
+        transparent: true,
+        opacity: 0.18,
+      });
+      this.ghostGroup.add(new THREE.LineSegments(lineGeo, lineMat));
     }
 
     if (ghostPoints.length > 0) {
@@ -673,7 +724,26 @@ export class CrochetViewport {
   ): void {
     // Topological X-Ray View: split Front Loop (bright) & Back Loop (tinted) V-arcs + post rods + working-yarn path
     const workingPathPoints: THREE.Vector3[] = [];
+    const ghostLineVertices: number[] = [];
     let lastPieceId = '';
+
+    const batches = new Map<
+      string,
+      {
+        color: THREE.Color;
+        geos: THREE.BufferGeometry[];
+      }
+    >();
+
+    const addDiagGeo = (color: THREE.Color, g: THREE.BufferGeometry) => {
+      const key = color.getHexString();
+      let batch = batches.get(key);
+      if (!batch) {
+        batch = { color: color.clone(), geos: [] };
+        batches.set(key, batch);
+      }
+      batch.geos.push(g);
+    };
 
     const flushWorkingPath = () => {
       if (workingPathPoints.length >= 2) {
@@ -698,13 +768,7 @@ export class CrochetViewport {
           const prevSt = pattern.stitches[st.prevStitchId];
           if (prevSt && prevSt.pieceId === st.pieceId) {
             const pPrev = this.getVec3(geom.positions, st.prevStitchId);
-            const gGeo = new THREE.BufferGeometry().setFromPoints([pPrev, pos]);
-            const gMat = new THREE.LineBasicMaterial({
-              color: 0x94a3b8,
-              transparent: true,
-              opacity: 0.15,
-            });
-            this.ghostGroup.add(new THREE.Line(gGeo, gMat));
+            ghostLineVertices.push(pPrev.x, pPrev.y, pPrev.z, pos.x, pos.y, pos.z);
           }
         }
         continue;
@@ -719,37 +783,23 @@ export class CrochetViewport {
       const tangent = this.getVec3(geom.tangents, i).normalize();
       const normal = this.getVec3(geom.normals, i).normalize();
       const color = this.resolveStitchColor(st, geom.stress[i]);
+      const backColor = color.clone().multiplyScalar(0.68);
 
       // Node sphere + split Front-Loop / Back-Loop bars so user can clearly distinguish FLO vs BLO!
-      const nodeGeo = new THREE.SphereGeometry(st.kind === 'magic_ring' ? 0.24 : 0.14, 12, 10);
-      const nodeMat = new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.45,
-      });
-      const nodeMesh = new THREE.Mesh(nodeGeo, nodeMat);
-      nodeMesh.position.copy(pos);
-      this.pickableStitchMap.set(nodeMesh, st.id);
-      this.solidGroup.add(nodeMesh);
+      const nodeGeo = new THREE.SphereGeometry(st.kind === 'magic_ring' ? 0.24 : 0.14, 8, 6);
+      nodeGeo.translate(pos.x, pos.y, pos.z);
+      addDiagGeo(color, nodeGeo);
 
       if (st.kind !== 'magic_ring') {
-        // Front loop bar (shifted +normal) & Back loop bar (shifted -normal)
         const flStart = pos.clone().addScaledVector(tangent, -0.32).addScaledVector(normal, 0.18);
         const flEnd = pos.clone().addScaledVector(tangent, 0.32).addScaledVector(normal, 0.08);
         const blStart = pos.clone().addScaledVector(tangent, -0.32).addScaledVector(normal, -0.18);
         const blEnd = pos.clone().addScaledVector(tangent, 0.32).addScaledVector(normal, -0.08);
 
-        const flGeo = new THREE.TubeGeometry(new THREE.LineCurve3(flStart, flEnd), 2, 0.048, 6, false);
-        const blGeo = new THREE.TubeGeometry(new THREE.LineCurve3(blStart, blEnd), 2, 0.048, 6, false);
-        const flMesh = new THREE.Mesh(flGeo, nodeMat);
-        const blMat = new THREE.MeshStandardMaterial({
-          color: color.clone().multiplyScalar(0.68),
-          roughness: 0.55,
-        });
-        const blMesh = new THREE.Mesh(blGeo, blMat);
-        this.pickableStitchMap.set(flMesh, st.id);
-        this.pickableStitchMap.set(blMesh, st.id);
-        this.solidGroup.add(flMesh);
-        this.solidGroup.add(blMesh);
+        const flGeo = new THREE.TubeGeometry(new THREE.LineCurve3(flStart, flEnd), 2, 0.048, 5, false);
+        const blGeo = new THREE.TubeGeometry(new THREE.LineCurve3(blStart, blEnd), 2, 0.048, 5, false);
+        addDiagGeo(color, flGeo);
+        addDiagGeo(backColor, blGeo);
       }
 
       // Anchor post rods down to exact target loop site
@@ -758,15 +808,38 @@ export class CrochetViewport {
         const dist = pos.distanceTo(targetPos);
         if (dist > 0.05) {
           const rodCurve = new THREE.LineCurve3(targetPos, pos);
-          const rodGeo = new THREE.TubeGeometry(rodCurve, 2, 0.055, 6, false);
-          const rodMesh = new THREE.Mesh(rodGeo, nodeMat);
-          this.pickableStitchMap.set(rodMesh, st.id);
-          this.solidGroup.add(rodMesh);
+          const rodGeo = new THREE.TubeGeometry(rodCurve, 2, 0.055, 5, false);
+          addDiagGeo(color, rodGeo);
         }
       }
     }
 
     flushWorkingPath();
+
+    for (const batch of batches.values()) {
+      if (batch.geos.length === 0) continue;
+      const merged = mergeGeometries(batch.geos, false);
+      for (const g of batch.geos) {
+        g.dispose();
+      }
+      if (!merged) continue;
+      const mat = new THREE.MeshStandardMaterial({
+        color: batch.color,
+        roughness: 0.48,
+      });
+      this.solidGroup.add(new THREE.Mesh(merged, mat));
+    }
+
+    if (ghostLineVertices.length > 0) {
+      const gGeo = new THREE.BufferGeometry();
+      gGeo.setAttribute('position', new THREE.Float32BufferAttribute(ghostLineVertices, 3));
+      const gMat = new THREE.LineBasicMaterial({
+        color: 0x94a3b8,
+        transparent: true,
+        opacity: 0.15,
+      });
+      this.ghostGroup.add(new THREE.LineSegments(gGeo, gMat));
+    }
   }
 
   private buildPieceMarkers(pattern: CompiledPattern, geom: SolvedGeometry): void {

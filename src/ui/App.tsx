@@ -72,6 +72,52 @@ function detectDarkTheme(): boolean {
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
 }
 
+/**
+ * Fast O(N) 32-bit FNV-1a hash of the compiled 3D stitch topology & colors.
+ * Prevents re-running 3D XPBD physics or rebuilding Three.js buffers when editing comments,
+ * notes, or incomplete lines that don't alter the actual stitch graph!
+ */
+function computeGraphFingerprint(
+  pattern: CompiledPattern,
+  stuffingOverride: boolean | null
+): string {
+  let h = 2166136261;
+  const mix = (val: number) => {
+    h ^= val | 0;
+    h = Math.imul(h, 16777619);
+  };
+  const mixStr = (s: string) => {
+    for (let i = 0; i < s.length; i++) {
+      mix(s.charCodeAt(i));
+    }
+  };
+
+  mix(stuffingOverride === null ? 0 : stuffingOverride ? 1 : 2);
+  mix(pattern.stitches.length);
+  for (let i = 0; i < pattern.stitches.length; i++) {
+    const st = pattern.stitches[i];
+    mixStr(st.kind);
+    mixStr(st.colorHex);
+    mix(st.rowNumber);
+    mix(st.isTurningChain ? 1 : 0);
+    mix(st.anchors.length);
+    for (let a = 0; a < st.anchors.length; a++) {
+      mix(st.anchors[a].targetStitchId);
+      mixStr(st.anchors[a].site);
+    }
+  }
+  for (let p = 0; p < pattern.pieces.length; p++) {
+    const pc = pattern.pieces[p];
+    mixStr(pc.id);
+    mixStr(pc.name);
+    mix(pc.stuffed ? 1 : 0);
+    mix(pc.stitchIds.length);
+  }
+  mixStr(JSON.stringify(pattern.assemblies));
+  mixStr(JSON.stringify(pattern.stems));
+  return `${pattern.stitches.length}:${h >>> 0}`;
+}
+
 export function App() {
   const [activeExampleId, setActiveExampleId] = useState<string>('custom');
   const [patternText, setPatternText] = useState<string>(loadInitialPatternFromStorage);
@@ -170,7 +216,7 @@ export function App() {
       } catch {
         // Ignore storage block
       }
-    }, 120);
+    }, 260);
     return () => window.clearTimeout(timer);
   }, [patternText]);
 
@@ -315,6 +361,9 @@ export function App() {
     geometry: solveStitchGeometry(compiled, { iterations: 28, stuffingOverride }),
   }));
   const pendingCompiledRef = useRef<CompiledPattern>(compiled);
+  const lastSolvedFingerprintRef = useRef<string>(
+    computeGraphFingerprint(compiled, stuffingOverride)
+  );
 
   useEffect(() => {
     try {
@@ -339,8 +388,14 @@ export function App() {
     }
   }, []);
 
-  // Re-solve 3D geometry whenever compiled graph or stuffing setting changes
+  // Re-solve 3D geometry only when the compiled 3D stitch topology or stuffing setting actually changes!
   useEffect(() => {
+    const nextFingerprint = computeGraphFingerprint(compiled, stuffingOverride);
+    if (nextFingerprint === lastSolvedFingerprintRef.current) {
+      return;
+    }
+    lastSolvedFingerprintRef.current = nextFingerprint;
+
     const reqId = ++reqCounterRef.current;
     pendingCompiledRef.current = compiled;
     if (workerRef.current) {
@@ -511,6 +566,7 @@ export function App() {
     setActiveExampleId(ex.id);
     setDialect(ex.dialect);
     setPatternText(ex.patternText);
+    setDebouncedPatternText(ex.patternText);
     setCurrentStep(999999);
     if (window.location.hash || window.location.search) {
       history.replaceState(null, '', window.location.pathname);
@@ -531,6 +587,7 @@ export function App() {
         setDialect(detected);
       }
       setPatternText(text);
+      setDebouncedPatternText(text);
       setCurrentStep(999999);
       showToast(
         detected
@@ -560,6 +617,7 @@ export function App() {
     if (replacedCount > 0) {
       setActiveExampleId('custom');
       setPatternText(convertedText);
+      setDebouncedPatternText(convertedText);
       showToast(
         `Transcribed ${replacedCount} stitch term${replacedCount === 1 ? '' : 's'} from ${prevDialect} to ${DIALECT_LABELS[nextDialect]}!`
       );
@@ -657,6 +715,7 @@ export function App() {
       })
       .join('\n');
     setPatternText(updated);
+    setDebouncedPatternText(updated);
     showToast(`Added explicit "Chain, turn," to ${targetLines.size} flat row(s)!`);
   };
 
@@ -755,6 +814,7 @@ export function App() {
       })
       .join('\n');
     setPatternText(updated);
+    setDebouncedPatternText(updated);
     setHoveredDiagLine(null);
     showToast(`Updated Line ${lineNum} stitch count to (${expectedCount})!`);
   };
@@ -818,7 +878,7 @@ export function App() {
             />
           </svg>
           <h1>StitchLens</h1>
-          <span className="brand-badge">v0.0.4 &middot; 3D Crochet Visualizer</span>
+          <span className="brand-badge">v0.0.5 &middot; 3D Crochet Visualizer</span>
         </div>
 
         <div className="header-actions">
@@ -855,7 +915,7 @@ export function App() {
             rel="noopener noreferrer"
             className="btn btn-report-issue"
           >
-            ! Report Issue (v0.0.4)
+            ! Report Issue (v0.0.5)
           </a>
 
           <button
