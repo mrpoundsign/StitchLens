@@ -377,6 +377,11 @@ function seedRoundPiece(
 
     if (ringIds.length === 0) continue;
 
+    // Close the round perimeter in XPBD! When a round finishes, stitch `ringIds[n-1]` sits immediately next to
+    // stitch `ringIds[0]` of the same round (or the first stitch of the next spiral round), so without a ring-closure
+    // or tangential neighbor constraint, asymmetric toe decreases (like 4 sc, 6 dec, 4 sc) can pull one half of the
+    // cylinder wide open!
+
     const circumference = ringIds.reduce(
       (acc, id) => acc + STITCH_DIMENSIONS[stitches[id].kind].width,
       0
@@ -388,9 +393,17 @@ function seedRoundPiece(
     // Check if round is predominantly BLO (e.g. structured basket wall turn!)
     const bloFraction =
       ringIds.filter((id) => stitches[id].anchors[0]?.site === 'blo').length / ringIds.length;
+    const hasDecreasesInRow = ringIds.some((id) => stitches[id].anchors.length > 1);
 
-    // Stadium/oval perimeter: P = 4 * spineHalfLen + 2 * pi * R
-    const effectiveSpineHalf = ovalSpineHalfLen;
+    // Stadium/oval perimeter: P = 4 * spineHalfLen + 2 * pi * R (shrinks spine toward 0 once decreases narrow an oval boot into a cylindrical ankle!)
+    const ovalPeakCount = isOvalFoundation
+      ? Math.max(...pieceRows.slice(0, rIdx + 1).map((rw) => rw.emittedStitchCount))
+      : ringIds.length;
+    const narrowFactor =
+      isOvalFoundation && ovalPeakCount > 0
+        ? Math.max(0, Math.min(1, (ringIds.length - 10) / Math.max(1, ovalPeakCount - 10)))
+        : 1;
+    const effectiveSpineHalf = ovalSpineHalfLen * narrowFactor;
     const rawTargetRadius = Math.max(
       0.85,
       (circumference - 4 * effectiveSpineHalf) / (2 * Math.PI)
@@ -462,8 +475,15 @@ function seedRoundPiece(
         const leftTipIds = ringIds.filter(
           (id) => stitches[id].anchors[0]?.targetStitchId === leftEndChainId
         );
-        const rightTipIds = ringIds.filter(
-          (id) => stitches[id].anchors[0]?.targetStitchId === rightEndChainId
+        // Split right-tip stitches into opening stitches (start of top +Z pass) vs closing stitches (end of bottom -Z pass)
+        // so the right tip rounds smoothly counterclockwise without a figure-8 crossing!
+        const openingRightTipIds = ringIds.filter(
+          (id, idx) =>
+            idx < n / 2 && stitches[id].anchors[0]?.targetStitchId === rightEndChainId
+        );
+        const closingRightTipIds = ringIds.filter(
+          (id, idx) =>
+            idx >= n / 2 && stitches[id].anchors[0]?.targetStitchId === rightEndChainId
         );
 
         for (let k = 0; k < n; k++) {
@@ -479,16 +499,34 @@ function seedRoundPiece(
             const idxInTip = Math.max(0, leftTipIds.indexOf(id));
             const countInTip = Math.max(1, leftTipIds.length);
             // Fan around left semicircle: +pi/2 -> 3*pi/2
-            const angle = Math.PI * 0.55 + (idxInTip / Math.max(1, countInTip - 1)) * (Math.PI * 0.9);
+            const angle =
+              countInTip === 1
+                ? Math.PI
+                : Math.PI * 0.55 + (idxInTip / (countInTip - 1)) * (Math.PI * 0.9);
             x = cx + Math.cos(angle) * targetRadius;
             z = Math.sin(angle) * targetRadius;
           } else if (ancId === rightEndChainId) {
-            // Stitch 0 is top-right (+60 deg), trailing stitches wrap bottom-right (-60 deg -> 0 deg)
-            const idxInTip = Math.max(0, rightTipIds.indexOf(id));
-            const angles = [Math.PI * 0.32, -Math.PI * 0.35, -Math.PI * 0.04, Math.PI * 0.15];
-            const angle = angles[idxInTip % angles.length];
-            x = cx + Math.cos(angle) * targetRadius;
-            z = Math.sin(angle) * targetRadius;
+            const openIdx = openingRightTipIds.indexOf(id);
+            if (openIdx >= 0) {
+              // Opening stitches fan counterclockwise across the top-right quadrant (+0.08*pi -> +0.44*pi) into the +Z top edge!
+              const cnt = Math.max(1, openingRightTipIds.length);
+              const angle =
+                cnt === 1
+                  ? Math.PI * 0.25
+                  : Math.PI * 0.08 + (openIdx / (cnt - 1)) * (Math.PI * 0.36);
+              x = cx + Math.cos(angle) * targetRadius;
+              z = Math.sin(angle) * targetRadius;
+            } else {
+              // Closing stitches fan counterclockwise across the bottom-right quadrant (-0.44*pi -> -0.08*pi) from the -Z bottom edge!
+              const closeIdx = Math.max(0, closingRightTipIds.indexOf(id));
+              const cnt = Math.max(1, closingRightTipIds.length);
+              const angle =
+                cnt === 1
+                  ? -Math.PI * 0.25
+                  : -Math.PI * 0.44 + (closeIdx / (cnt - 1)) * (Math.PI * 0.36);
+              x = cx + Math.cos(angle) * targetRadius;
+              z = Math.sin(angle) * targetRadius;
+            }
           } else {
             // Straight middle spine chain: +Z on initial top pass, -Z on opposite underside pass!
             const signZ = anc?.site === 'chain_underside' ? -1 : 1;
@@ -501,27 +539,42 @@ function seedRoundPiece(
           pos[id * 3 + 2] = z;
         }
       } else {
-        // Subsequent oval rounds (Rnd 2+): grow directly above/outward from parent stitch in Rnd r-1!
+        // Subsequent oval rounds (Rnd 2+): grow directly above/outward (or taper inward on boot/instep decreases!)
         const radialStep =
           bloFraction > 0.6 || Math.abs(targetRadius - prevRadius) < 0.12
             ? 0
-            : Math.max(0, targetRadius - prevRadius);
+            : targetRadius - prevRadius;
 
-        // Count how many children share each parent stitch (for clean tangential fan on `inc`)
+        // Count how many children share each single-anchor parent stitch (for clean tangential fan on `inc`)
         const childrenByParent = new Map<number, number[]>();
         for (const id of ringIds) {
-          const pid = stitches[id].anchors[0]?.targetStitchId ?? id;
-          const list = childrenByParent.get(pid) ?? [];
-          list.push(id);
-          childrenByParent.set(pid, list);
+          if (stitches[id].anchors.length === 1) {
+            const pid = stitches[id].anchors[0].targetStitchId;
+            const list = childrenByParent.get(pid) ?? [];
+            list.push(id);
+            childrenByParent.set(pid, list);
+          }
         }
+
+        const rawX = new Float32Array(n);
+        const rawZ = new Float32Array(n);
+        let meanX = 0;
+        let meanZ = 0;
 
         for (let k = 0; k < n; k++) {
           const id = ringIds[k];
           const st = stitches[id];
-          const pid = st.anchors[0]?.targetStitchId ?? id;
-          const px = pos[pid * 3];
-          const pz = pos[pid * 3 + 2];
+          // Average ALL parent anchors so `dec` (2tog/3tog) pulls halfway between its 2 consumed parents!
+          let px = 0;
+          let pz = 0;
+          if (st.anchors.length > 0) {
+            for (const a of st.anchors) {
+              px += pos[a.targetStitchId * 3];
+              pz += pos[a.targetStitchId * 3 + 2];
+            }
+            px /= st.anchors.length;
+            pz /= st.anchors.length;
+          }
 
           // Outward stadium normal from nearest spine point `clampedSpineX`
           const clampedSpineX = Math.max(-ovalSpineHalfLen, Math.min(ovalSpineHalfLen, px));
@@ -532,20 +585,59 @@ function seedRoundPiece(
           nz /= nLen;
 
           // Tangential fan when 2+ children share the same parent (`inc`)
-          const siblings = childrenByParent.get(pid) ?? [id];
+          const pid = st.anchors[0]?.targetStitchId ?? id;
+          const siblings = st.anchors.length === 1 ? (childrenByParent.get(pid) ?? [id]) : [id];
           const sibIdx = siblings.indexOf(id);
           const fanOffset =
             siblings.length > 1 ? (sibIdx - (siblings.length - 1) / 2) * 0.48 : 0;
           const tx = -nz;
           const tz = nx;
 
+          rawX[k] = px + nx * radialStep + tx * fanOffset;
+          rawZ[k] = pz + nz * radialStep + tz * fanOffset;
+          meanX += rawX[k];
+          meanZ += rawZ[k];
+        }
+
+        meanX /= n;
+        meanZ /= n;
+
+        // Smooth tangential spacing around the closed ring so asymmetric boot/toe decreases (e.g. 4 sc, 6 dec, 4 sc)
+        // contract into an even, uniform ankle tube instead of leaving stretched horizontal gaps on one side!
+        const ringRadius = circumference / (2 * Math.PI);
+        const prevRow = pieceRows[rIdx - 1];
+        const prevWasNarrowed = prevRow ? n <= prevRow.emittedStitchCount : false;
+        const circularBlend = hasDecreasesInRow ? 0.55 : prevWasNarrowed && n <= 16 ? 0.45 : 0.15;
+
+        // Compute starting phase angle of stitch 0 around `(meanX, meanZ)` and winding sign
+        const startTheta = Math.atan2(rawZ[0] - meanZ, rawX[0] - meanX);
+        let windingCross = 0;
+        for (let k = 0; k < n; k++) {
+          const next = (k + 1) % n;
+          windingCross +=
+            (rawX[k] - meanX) * (rawZ[next] - meanZ) -
+            (rawZ[k] - meanZ) * (rawX[next] - meanX);
+        }
+        const windingSign = windingCross >= 0 ? 1 : -1;
+
+        for (let k = 0; k < n; k++) {
+          const id = ringIds[k];
           const frac = k / n;
           const spiralLift =
             piece.workMode === 'spiral_rounds' ? (frac - 0.5) * deltaY * 0.45 : 0;
 
-          pos[id * 3] = px + nx * radialStep + tx * fanOffset;
+          const prevK = (k - 1 + n) % n;
+          const nextK = (k + 1) % n;
+          const lapX = 0.5 * rawX[k] + 0.25 * (rawX[prevK] + rawX[nextK]);
+          const lapZ = 0.5 * rawZ[k] + 0.25 * (rawZ[prevK] + rawZ[nextK]);
+
+          const idealTheta = startTheta + windingSign * frac * Math.PI * 2;
+          const circX = meanX + Math.cos(idealTheta) * ringRadius;
+          const circZ = meanZ + Math.sin(idealTheta) * ringRadius;
+
+          pos[id * 3] = lapX * (1 - circularBlend) + circX * circularBlend;
           pos[id * 3 + 1] = currentY + spiralLift;
-          pos[id * 3 + 2] = pz + nz * radialStep + tz * fanOffset;
+          pos[id * 3 + 2] = lapZ * (1 - circularBlend) + circZ * circularBlend;
         }
       }
 
@@ -755,6 +847,32 @@ function buildDistanceConstraints(pattern: CompiledPattern): DistanceConstraint[
           enforceUpwardY,
         });
       }
+    }
+  }
+
+  // 3. Round perimeter closure edge: in spiral/joined rounds, the last stitch of a round sits
+  // immediately adjacent to the first stitch of that round (so the final round doesn't splay open at the seam)!
+  for (const row of pattern.rows) {
+    if (row.workMode === 'flat_rows') continue;
+    const ringIds: number[] = [];
+    for (let id = row.firstStitchId; id <= row.lastStitchId; id++) {
+      const st = stitches[id];
+      if (!st.isTurningChain && st.kind !== 'magic_ring') {
+        ringIds.push(id);
+      }
+    }
+    if (ringIds.length >= 4) {
+      const firstId = ringIds[0];
+      const lastId = ringIds[ringIds.length - 1];
+      const dim = STITCH_DIMENSIONS[stitches[lastId].kind];
+      constraints.push({
+        a: lastId,
+        b: firstId,
+        restLength: Math.max(0.4, dim.width * 1.05),
+        compliance: 0.035,
+        isPrimaryPost: false,
+        enforceUpwardY: false,
+      });
     }
   }
 

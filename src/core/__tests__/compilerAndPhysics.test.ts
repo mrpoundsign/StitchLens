@@ -325,85 +325,84 @@ Freeform reminder at the end
     expect(freeformNode).toBeTruthy();
   });
 
-  it('infers spiral_rounds (no implicit turns) for joined-leg / FLO-attached pieces without turns, and only flags true flat pieces', () => {
+  it('infers spiral_rounds (no implicit turns) for joined-limb / FLO-attached pieces without turns, and only flags true flat pieces', () => {
     const joinedAndFlatPattern = `
-Body and Head:
-11. Make 12 sc in each leg for a total of 24 sc (24)
-12. 8 sc, FLO: (sc, inc) x 4, 8 sc (28)
-13. 8 sc, (2 sc, inc) x 4, 8 sc (32)
+Torso Tube:
+11. Make 10 sc in each leg for a total of 20 sc (20)
+12. 6 sc, FLO: (sc, inc) x 4, 6 sc (24)
+13. 6 sc, (2 sc, inc) x 4, 6 sc (28)
 
-Skirt:
-1. 28 sc (28)
-2. 28 sc (28)
+Ruffle Trim:
+1. 24 sc (24)
+2. 24 sc (24)
 
-Shield:
+Flat Pennant:
 1. Ch 2
 2. Increase in 2nd chain from hook (2)
 3. Ch, turn, 2 inc (4)
-7-10. 10 sc (10)
+4-7. 8 sc (8)
 `;
     const compiled = compilePattern(joinedAndFlatPattern);
-    const bodyPiece = compiled.pieces.find((p) => p.id === 'body_and_head')!;
-    const skirtPiece = compiled.pieces.find((p) => p.id === 'skirt')!;
-    const shieldPiece = compiled.pieces.find((p) => p.id === 'shield')!;
+    const torsoPiece = compiled.pieces.find((p) => p.id === 'torso_tube')!;
+    const rufflePiece = compiled.pieces.find((p) => p.id === 'ruffle_trim')!;
+    const pennantPiece = compiled.pieces.find((p) => p.id === 'flat_pennant')!;
 
-    expect(bodyPiece.workMode).toBe('spiral_rounds');
-    expect(skirtPiece.workMode).toBe('spiral_rounds');
-    expect(shieldPiece.workMode).toBe('flat_rows');
+    expect(torsoPiece.workMode).toBe('spiral_rounds');
+    expect(rufflePiece.workMode).toBe('spiral_rounds');
+    expect(pennantPiece.workMode).toBe('flat_rows');
 
     const implicitRows = compiled.rows.filter((r) => r.implicitTurn);
-    // Only Shield rows 7-10 should have implicit turns! Body and Skirt have 0 implicit turns.
-    expect(implicitRows.every((r) => r.pieceId === 'shield')).toBe(true);
+    // Only Flat Pennant rows 4-7 should have implicit turns! Torso Tube and Ruffle Trim have 0 implicit turns.
+    expect(implicitRows.every((r) => r.pieceId === 'flat_pennant')).toBe(true);
     expect(implicitRows.length).toBe(4);
   });
 
-  it('seeds round-to-flat hybrid pieces (like a Hair cap with back-and-forth neck flap rows) as a compact 3D dome instead of a wide flat fan', () => {
-    const hairAndEars = `
-Hair:
-Colour: Mustard
+  it('seeds round-to-flat hybrid pieces (like a dome hood with back-and-forth flap rows) as a compact 3D dome instead of a wide flat fan', () => {
+    const hoodAndPouch = `
+Dome Hood:
+Colour: Gold
 @stuffed false
 1. 6 sc in a magic ring (6)
 2. 6 inc (12)
 3. (sc, inc) x 6 (18)
 4. (2 sc, inc) x 6 (24)
 5. (3 sc, inc) x 6 (30)
-6. (4sc, inc) x 6 (36)
-7-12. 36 sc (36)
-13. 15 sc, ch, turn (15)
-14. 15 sc, ch, turn (15)
-15. 15 sc (15)
+6-9. 30 sc (30)
+10. 12 sc, ch, turn (12)
+11. 12 sc, ch, turn (12)
+12. 12 sc (12)
 
-Ears (make 2):
-Colour: Skin tone
+Side Pouch:
+Colour: Tan
 @stuffed false
 1. 6 sc in a magic ring (6)
 2. 6 sc (6)
 3. (2 sc, inc) x 2 (8)
 `;
-    const compiled = compilePattern(hairAndEars);
+    const compiled = compilePattern(hoodAndPouch);
     const geom = solveStitchGeometry(compiled);
-    const [hairPiece, earsPiece] = compiled.pieces;
+    const [hoodPiece, pouchPiece] = compiled.pieces;
 
-    let hairMinX = Infinity;
-    let hairMaxX = -Infinity;
-    let hairMinZ = Infinity;
-    let hairMaxZ = -Infinity;
-    for (const id of hairPiece.stitchIds) {
-      hairMinX = Math.min(hairMinX, geom.positions[id * 3]);
-      hairMaxX = Math.max(hairMaxX, geom.positions[id * 3]);
-      hairMinZ = Math.min(hairMinZ, geom.positions[id * 3 + 2]);
-      hairMaxZ = Math.max(hairMaxZ, geom.positions[id * 3 + 2]);
+    let hoodMinX = Infinity;
+    let hoodMaxX = -Infinity;
+    let hoodMinZ = Infinity;
+    let hoodMaxZ = -Infinity;
+    for (const id of hoodPiece.stitchIds) {
+      hoodMinX = Math.min(hoodMinX, geom.positions[id * 3]);
+      hoodMaxX = Math.max(hoodMaxX, geom.positions[id * 3]);
+      hoodMinZ = Math.min(hoodMinZ, geom.positions[id * 3 + 2]);
+      hoodMaxZ = Math.max(hoodMaxZ, geom.positions[id * 3 + 2]);
     }
-    // Hair cap (36 sc circumference) should have diameter ~11-13 units in both X and Z, NOT a 35-unit flat sheet!
-    expect(hairMaxX - hairMinX).toBeLessThan(15);
-    expect(hairMaxZ - hairMinZ).toBeGreaterThan(8);
+    // Dome Hood (30 sc circumference) should have diameter ~9-12 units in both X and Z, NOT a 30-unit flat sheet!
+    expect(hoodMaxX - hoodMinX).toBeLessThan(15);
+    expect(hoodMaxZ - hoodMinZ).toBeGreaterThan(7);
 
-    // And Hair's bounding box must not overlap Ears' bounding box in the kit grid
-    let earsMinX = Infinity;
-    for (const id of earsPiece.stitchIds) {
-      earsMinX = Math.min(earsMinX, geom.positions[id * 3]);
+    // And Dome Hood's bounding box must not overlap Side Pouch's bounding box in the kit grid
+    let pouchMinX = Infinity;
+    for (const id of pouchPiece.stitchIds) {
+      pouchMinX = Math.min(pouchMinX, geom.positions[id * 3]);
     }
-    expect(earsMinX).toBeGreaterThan(hairMaxX + 2);
+    expect(pouchMinX).toBeGreaterThan(hoodMaxX + 2);
   });
 
   it('transcribes pattern text between US, UK, and ES dialects while preserving comments, notes, and identical 3D stitch counts', () => {
@@ -490,28 +489,130 @@ R2-R8 1sc in each (30)
     expect(c2.rows.length).toBe(8);
     expect(c2.rows.every((r) => r.emittedStitchCount === 30)).toBe(true);
 
-    // Also verify oval Sword Blade and linear Belt when they appear as later pieces in a multi-piece pattern!
+    // Also verify oval strap/leaf pieces and linear cords when they appear as later pieces in a multi-piece pattern!
     const multiPieceOvalTest = `
-Sword Hilt:
+Peg Handle:
 1. 6 sc in a magic ring (6)
 2-4. 6 sc (6)
 
-Belt:
+Thin Cord:
 @stuffed false
-1. Ch 29, 28 sc starting in 2nd chain from hook (28)
+1. Ch 21, 20 sc starting in 2nd chain from hook (20)
 
-Sword Blade:
-1. Ch 13, 11 sc in the second chain from the hook, 4 sc in the same stitch, 11 sc (26)
+Oval Strap:
+1. Ch 11, 9 sc in the second chain from the hook, 4 sc in the same stitch, 9 sc (22)
 `;
     const c3 = compilePattern(multiPieceOvalTest);
     expect(c3.diagnostics).toEqual([]);
-    const blade = c3.pieces.find((p) => p.name === 'Sword Blade')!;
-    expect(blade).toBeDefined();
-    // Sword Blade must auto-pivot onto `chain_underside` along the 10 remaining underside chains (and wrap the right tip) so it forms a straight 2-sided blade!
-    const bladeUndersideStitches = blade.stitchIds.filter((id) =>
+    const strap = c3.pieces.find((p) => p.name === 'Oval Strap')!;
+    expect(strap).toBeDefined();
+    // Oval Strap must auto-pivot onto `chain_underside` along the 8 remaining underside chains (and wrap the right tip) so it forms a straight 2-sided oval!
+    const strapUndersideStitches = strap.stitchIds.filter((id) =>
       c3.stitches[id].anchors.some((a) => a.site === 'chain_underside')
     );
-    expect(bladeUndersideStitches.length).toBe(10);
+    expect(strapUndersideStitches.length).toBe(8);
+  });
+
+  it('solves synthetic oval-sole boot with asymmetric toe decreases into a uniform, uncrossed cylindrical ankle tube', () => {
+    // Original synthetic test pattern exercising:
+    // - Oval chain foundation (Ch 6 -> 5 usable chains)
+    // - First oval pass with tip increases (14 sts)
+    // - Second oval expansion round (18 sts)
+    // - BLO vertical wall turn (18 sts)
+    // - Asymmetric one-sided instep decreases (3 sc, 5 dec, 5 sc -> 13 sts; then 4 sc, 2 dec, 5 sc -> 11 sts)
+    // - Upper cylindrical ankle cuff rounds (11 sts)
+    const syntheticBootPattern = `
+Plushie Boot:
+1. Chain 6
+2. Starting in 2nd chain from hook: inc, 3 sc, inc x 2, 3 sc, inc (14)
+3. (2 sc, inc) x 4, 2 sc (18)
+4. BLO: 18 sc (18)
+5. 3 sc, 5 dec, 5 sc (13)
+6. 4 sc, 2 dec, 5 sc (11)
+7. 11 sc (11)
+8. 11 sc (11)
+`;
+    const compiled = compilePattern(syntheticBootPattern);
+    expect(compiled.diagnostics).toEqual([]);
+
+    const geom = solveStitchGeometry(compiled);
+
+    // 1. Check that Row 2 (first oval pass around the foundation chain) has zero self-intersections / figure-8 crossings!
+    const row2Stitches = compiled.stitches.filter(
+      (s) => s.rowNumber === 2 && !s.isTurningChain
+    );
+    expect(row2Stitches.length).toBe(14);
+
+    // No two non-adjacent segments in Row 2 may cross in the XZ plane!
+    const segmentsIntersect2D = (
+      ax: number,
+      az: number,
+      bx: number,
+      bz: number,
+      cx: number,
+      cz: number,
+      dx: number,
+      dz: number
+    ) => {
+      const ccw = (p1x: number, p1z: number, p2x: number, p2z: number, p3x: number, p3z: number) =>
+        (p3z - p1z) * (p2x - p1x) > (p2z - p1z) * (p3x - p1x);
+      return (
+        ccw(ax, az, cx, cz, dx, dz) !== ccw(bx, bz, cx, cz, dx, dz) &&
+        ccw(ax, az, bx, bz, cx, cz) !== ccw(ax, az, bx, bz, dx, dz)
+      );
+    };
+
+    let row2Crossings = 0;
+    for (let i = 0; i < row2Stitches.length; i++) {
+      const iNext = (i + 1) % row2Stitches.length;
+      const aId = row2Stitches[i].id;
+      const bId = row2Stitches[iNext].id;
+      for (let j = i + 2; j < row2Stitches.length; j++) {
+        if (i === 0 && j === row2Stitches.length - 1) continue; // Adjacent at wrap
+        const jNext = (j + 1) % row2Stitches.length;
+        const cId = row2Stitches[j].id;
+        const dId = row2Stitches[jNext].id;
+        if (
+          segmentsIntersect2D(
+            geom.positions[aId * 3],
+            geom.positions[aId * 3 + 2],
+            geom.positions[bId * 3],
+            geom.positions[bId * 3 + 2],
+            geom.positions[cId * 3],
+            geom.positions[cId * 3 + 2],
+            geom.positions[dId * 3],
+            geom.positions[dId * 3 + 2]
+          )
+        ) {
+          row2Crossings++;
+        }
+      }
+    }
+    expect(row2Crossings).toBe(0);
+
+    // 2. Check the upper ankle round (Row 8, 11 sc):
+    // Adjacent stitches around the closed ring (including wrap from last stitch -> first stitch)
+    // must have even, uniform spacing (no giant stretched gaps on one side or pinched clumps on the other)!
+    const row8Stitches = compiled.stitches.filter(
+      (s) => s.rowNumber === 8 && !s.isTurningChain
+    );
+    expect(row8Stitches.length).toBe(11);
+    let maxStepDist = 0;
+    let minStepDist = Infinity;
+    for (let i = 0; i < row8Stitches.length; i++) {
+      const aId = row8Stitches[i].id;
+      const bId = row8Stitches[(i + 1) % row8Stitches.length].id;
+      const d = Math.hypot(
+        geom.positions[bId * 3] - geom.positions[aId * 3],
+        geom.positions[bId * 3 + 1] - geom.positions[aId * 3 + 1],
+        geom.positions[bId * 3 + 2] - geom.positions[aId * 3 + 2]
+      );
+      maxStepDist = Math.max(maxStepDist, d);
+      minStepDist = Math.min(minStepDist, d);
+    }
+    // Every neighbor link (including seam closure) should be close to 1 stitch width (~0.75 - 1.45), never stretched to 2.5+!
+    expect(maxStepDist).toBeLessThan(1.5);
+    expect(minStepDist).toBeGreaterThan(0.55);
   });
 });
 
